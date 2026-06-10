@@ -1,0 +1,1 @@
+- [GNS3 Controller 错误吞噬问题](./gns3-controller-error-swallowing.md) — node_suspend 对 VPCS/IOU 返回 405，controller 吞掉错误伪装成成功
