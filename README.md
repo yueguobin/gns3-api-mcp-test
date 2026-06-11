@@ -1,6 +1,6 @@
 # GNS3 API MCP Test Documentation
 
-This repository contains the complete test documentation for the [GNS3 API MCP Server](https://github.com/yueguobin/gns3-api-mcp). It covers all 82 MCP tools across 13 test stages, from basic read-only queries to advanced features and cleanup operations.
+This repository contains the complete test documentation for the GNS3 API MCP Server ([3.1 branch of gns3-server](https://github.com/yueguobin/gns3-server/tree/3.1)). It covers all 82 MCP tools across 13 test stages, from basic read-only queries to advanced features and cleanup operations.
 
 ## Project Overview
 
@@ -63,7 +63,8 @@ See [mcp_test_docs/zh/](mcp_test_docs/zh/) for Chinese documentation.
 
 ## Related Projects
 
-- [gns3-api-mcp](https://github.com/yueguobin/gns3-api-mcp) - The GNS3 API MCP Server
+- [gns3-server (3.1 branch)](https://github.com/yueguobin/gns3-server/tree/3.1) - GNS3 server with MCP support
+- [gns3-copilot](https://github.com/yueguobin/gns3-copilot) - AI-powered network automation assistant for GNS3
 
 ## License
 
