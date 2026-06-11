@@ -7,7 +7,7 @@ This repository contains the complete test documentation for the GNS3 API MCP Se
 - **Total Tools Tested**: 82
 - **Test Coverage**: 100%
 - **Test Stages**: 13
-- **License**: CC BY-NC 4.0 (free to use with attribution, non-commercial)
+- **License**: CC BY-NC-ND 4.0 (attribution, non-commercial, no derivatives)
 
 ## Directory Structure
 
@@ -68,4 +68,4 @@ See [mcp_test_docs/zh/](mcp_test_docs/zh/) for Chinese documentation.
 
 ## License
 
-This project is licensed under [CC BY-NC 4.0](LICENSE). You are free to share and adapt the material with attribution, but not for commercial purposes.
+This project is licensed under [CC BY-NC-ND 4.0](LICENSE). You are free to share the material with attribution, but not for commercial purposes and no modifications are allowed.
