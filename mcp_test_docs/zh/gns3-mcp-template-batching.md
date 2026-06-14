@@ -28,4 +28,6 @@ metadata:
 - **pilot 先行**：1-2 台试渲染+语法+效果，再扩全量。add-path pilot 据此发现"此拓扑无收益"，省了 20 台无效配置（见 [[gns3-bgp-lab]] 的 add-path 条目）。
 - **回滚**：`no <原命令>` 删除 + `show run | include <关键字>` 验证已清；若改动没 `write memory`，reload 自动还原 running-config（startup 未被污染）。
 
+**批量抓包（link_capture_*，2026-06-14 后端支持 `link_ids` 数组）：** `link_capture_start`/`stop`/`download` 均可传 `link_ids:[id1,...]` 一次处理多条（单条用 `link_id`）。start/stop 返回 `[{link_id,status}]`；download 返回 `{downloads:[{link_id,download_url,curl_command}],count}`，每条 curl 输出名自动带 link_id 不重名，token 在 `Authorization: Bearer` 头（同批共用一个 10 分钟 JWT）。实际下载在一个 bash 里多 `curl &` + `wait` 并行即可——多链路并行抓包不再逐条调用。（另：`node_console` 返回的 ws_url 现为 `ws://`（2026-06-14 后端修复，此前是 http:// 需手动改），可直接喂 websocat；JWT 在 URL 的 `?token=`；控制台命令行尾用 `\r\n`，输出含 telnet IAC 需过滤。）
+
 关联 [[gns3-bgp-lab]]。
