@@ -20,6 +20,11 @@ appliance_id : str (UUID, required)
     UUID of the appliance to install, e.g.
     ``"cf5d1f22-953a-434d-a07e-6e17de85acf1"``.
 
+version : str (optional)
+    Version to install (e.g. ``"2.7.0.356"``). Required if the appliance
+    has multiple versions. Use ``appliance_get`` to see available versions
+    for a given appliance.
+
 Returns
 -------
 Template / appliance install confirmation. If the appliance has already been
@@ -37,6 +42,8 @@ Usage::
     ../../.venv/bin/python test_appliance_install.py
     # Manual ID
     ../../.venv/bin/python test_appliance_install.py --appliance-id <UUID>
+    # Manual ID + version
+    ../../.venv/bin/python test_appliance_install.py --appliance-id <UUID> --version 2.7.0.356
     # View the tool's input schema only
     ../../.venv/bin/python test_appliance_install.py --show-schema
 """
@@ -79,6 +86,11 @@ def parse_args() -> argparse.Namespace:
         "--no-save",
         action="store_true",
         help="Skip persisting call data + raw return to a JSON record file",
+    )
+    p.add_argument(
+        "--version",
+        default=None,
+        help="Version to install (e.g. '2.7.0.356'). Required if the appliance has multiple versions.",
     )
     return p.parse_args()
 
@@ -132,12 +144,16 @@ async def main() -> None:
             appliance_id, name = ids[0]
             print(f"  Found {len(ids)} appliances, picked first: {name or '(unnamed)'} -> {appliance_id}")
 
-        print(f"\n=== Calling {TOOL}({{'appliance_id': '{appliance_id}'}}) ===")
+        call_args = {"appliance_id": appliance_id}
+        if args.version:
+            call_args["version"] = args.version
+
+        print(f"\n=== Calling {TOOL}({json.dumps(call_args, ensure_ascii=False)}) ===")
         result, elapsed, _ = await call_and_record(
             session,
             script_file=__file__,
             tool=TOOL,
-            arguments={"appliance_id": appliance_id},
+            arguments=call_args,
             input_schema=tool.inputSchema,
             save=not args.no_save,
         )
