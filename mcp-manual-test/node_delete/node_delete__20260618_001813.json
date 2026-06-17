@@ -1,0 +1,75 @@
+{
+  "tool": "node_delete",
+  "called_at": "2026-06-18T00:18:13",
+  "elapsed_ms": 44.3,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+      "node_id": "b274e37f-25be-47ab-a76c-06ba3f46fce1"
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "node_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Node UUID (single mode)",
+          "title": "Node Id"
+        },
+        "node_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Batch mode: [\"uuid1\",\"uuid2\"] — delete multiple nodes in parallel",
+          "title": "Node Ids"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "node_deleteArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "message": "Node b274e37f-25be-47ab-a76c-06ba3f46fce1 deleted",
+              "node_id": "b274e37f-25be-47ab-a76c-06ba3f46fce1"
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "tool": "node_file_list",
+  "called_at": "2026-06-18T00:07:44",
+  "elapsed_ms": 63.1,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+      "node_id": "fa0bf572-940f-4f7d-b27b-ae5a698ecf66"
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "node_id": {
+          "description": "UUID of the node",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "path": {
+          "default": "",
+          "description": "Subdirectory path within node directory (optional)",
+          "title": "Path",
+          "type": "string"
+        },
+        "recursive": {
+          "default": false,
+          "description": "Recursively list all files (optional, default: false)",
+          "title": "Recursive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project_id",
+        "node_id"
+      ],
+      "title": "node_file_listArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "files": [
+                {
+                  "path": "x86_64_crb_linux-adventerprisek9-ms.iol.md5sum",
+                  "size": 32,
+                  "created_at": "2026-06-13T22:41:10.246655",
+                  "modified_at": "2026-06-13T22:41:10.246655",
+                  "file_type": "ASCII text, with no line terminators"
+                },
+                {
+                  "path": "startup-config.cfg",
+                  "size": 2869,
+                  "created_at": "2026-06-15T12:08:32.882163",
+                  "modified_at": "2026-06-15T12:08:32.882163",
+                  "file_type": "ASCII text"
+                },
+                {
+                  "path": "CRDU",
+                  "size": 4096,
+                  "created_at": "2026-06-14T00:31:26.895229",
+                  "modified_at": "2026-06-14T00:31:26.895229",
+                  "file_type": "directory"
+                },
+                {
+                  "path": "NETMAP",
+                  "size": 1136,
+                  "created_at": "2026-06-14T22:02:10.351136",
+                  "modified_at": "2026-06-14T22:02:10.351136",
+                  "file_type": "ASCII text"
+                },
+                {
+                  "path": "private-config.cfg",
+                  "size": 3572,
+                  "created_at": "2026-06-15T12:08:32.882163",
+                  "modified_at": "2026-06-15T12:08:32.882163",
+                  "file_type": "ASCII text"
+                },
+                {
+                  "path": "nvram_00004",
+                  "size": 262144,
+                  "created_at": "2026-06-14T22:02:19.747374",
+                  "modified_at": "2026-06-14T22:02:19.747374",
+                  "file_type": "data"
+                },
+                {
+                  "path": "ubridge.log",
+                  "size": 458,
+                  "created_at": "2026-06-14T22:44:59.342285",
+                  "modified_at": "2026-06-14T22:44:59.342285",
+                  "file_type": "ASCII text"
+                }
+              ],
+              "count": 7
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

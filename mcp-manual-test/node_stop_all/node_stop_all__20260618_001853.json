@@ -1,0 +1,45 @@
+{
+  "tool": "node_stop_all",
+  "called_at": "2026-06-18T00:18:53",
+  "elapsed_ms": 2597.8,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a"
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project",
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "node_stop_allArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "message": "All nodes stopped",
+              "project_id": "85835ce2-00fd-4766-be5e-26b024da510a"
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

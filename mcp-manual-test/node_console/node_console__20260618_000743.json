@@ -1,0 +1,55 @@
+{
+  "tool": "node_console",
+  "called_at": "2026-06-18T00:07:43",
+  "elapsed_ms": 22.9,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+      "node_id": "fa0bf572-940f-4f7d-b27b-ae5a698ecf66"
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project containing the node",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "node_id": {
+          "description": "UUID of the node to get console info for",
+          "title": "Node Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "node_id"
+      ],
+      "title": "node_consoleArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "node_id": "fa0bf572-940f-4f7d-b27b-ae5a698ecf66",
+              "node_name": "AS64512-CE1",
+              "console_type": "telnet",
+              "ws_url": "ws://192.168.1.3:3080/v3/projects/85835ce2-00fd-4766-be5e-26b024da510a/nodes/fa0bf572-940f-4f7d-b27b-ae5a698ecf66/console/ws?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc4MTcxMzA2MywidmVyIjowfQ.fTlfiYCYshPJ53cWvWg4bnLPMFkTtIumslq5TwYwxfA",
+              "command": "websocat ws://192.168.1.3:3080/v3/projects/85835ce2-00fd-4766-be5e-26b024da510a/nodes/fa0bf572-940f-4f7d-b27b-ae5a698ecf66/console/ws?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc4MTcxMzA2MywidmVyIjowfQ.fTlfiYCYshPJ53cWvWg4bnLPMFkTtIumslq5TwYwxfA"
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

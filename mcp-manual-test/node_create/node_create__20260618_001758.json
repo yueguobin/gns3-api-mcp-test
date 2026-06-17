@@ -1,0 +1,113 @@
+{
+  "tool": "node_create",
+  "called_at": "2026-06-18T00:17:58",
+  "elapsed_ms": 7222.9,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+      "template_id": "cc8dbf81-03b7-4dc5-99fc-f2947cb4998e",
+      "x": 0,
+      "y": 0,
+      "name": "mcp-test-node"
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "template_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Template UUID (required for single mode; used as default in batch mode)",
+          "title": "Template Id"
+        },
+        "x": {
+          "default": 0,
+          "description": "X coordinate (canvas center origin, right positive)",
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "default": 0,
+          "description": "Y coordinate (canvas center origin, down positive)",
+          "title": "Y",
+          "type": "integer"
+        },
+        "compute_id": {
+          "default": "local",
+          "description": "Compute ID (default: local)",
+          "title": "Compute Id",
+          "type": "string"
+        },
+        "nodes": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Batch mode: [{name, template_id?, x?, y?, compute_id?}] — top-level template_id applies as default",
+          "title": "Nodes"
+        },
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Response fields to include (default: [node_id, name, node_type, status, console]). Available: compute_id, name, node_type, node_id, console, console_type, console_auto_start, aux, aux_type, properties, label, symbol, x, y, z, locked, port_name_format, port_segment_size, first_port_name, custom_adapters, tags, template_id, project_id, node_directory, status, command_line, width, height, ports, console_host",
+          "title": "Fields"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "node_createArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "node_id": "8fc68e75-fe09-4628-825e-2793f3ff876a",
+              "name": "R-1",
+              "node_type": "iou",
+              "status": "stopped",
+              "console": 5012
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

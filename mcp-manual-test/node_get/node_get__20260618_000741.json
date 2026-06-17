@@ -1,0 +1,424 @@
+{
+  "tool": "node_get",
+  "called_at": "2026-06-18T00:07:41",
+  "elapsed_ms": 26.7,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+      "node_id": "fa0bf572-940f-4f7d-b27b-ae5a698ecf66"
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "node_id": {
+          "description": "UUID of the node",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: return only these fields. e.g. [\"name\",\"status\"]. Available: name, status, node_type, console, console_type, console_host, node_id, project_id, compute_id, symbol, x, y, z, locked, ports, properties, command_line, node_directory, label, tags, template_id, width, height, aux, aux_type",
+          "title": "Fields"
+        }
+      },
+      "required": [
+        "project_id",
+        "node_id"
+      ],
+      "title": "node_getArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "compute_id": "local",
+              "name": "AS64512-CE1",
+              "node_type": "iou",
+              "node_id": "fa0bf572-940f-4f7d-b27b-ae5a698ecf66",
+              "console": 5116,
+              "console_type": "telnet",
+              "console_auto_start": false,
+              "aux": null,
+              "aux_type": null,
+              "properties": {
+                "application_id": 1,
+                "builtin": false,
+                "compute_id": "local",
+                "created_at": "2026-05-19T05:45:38",
+                "ethernet_adapters": 4,
+                "l1_keepalives": false,
+                "md5sum": "5d584f6cfbeaadc87d55f613da1049ed",
+                "nvram": 256,
+                "path": "x86_64_crb_linux-adventerprisek9-ms.iol",
+                "ram": 1024,
+                "serial_adapters": 2,
+                "updated_at": "2026-05-19T14:58:07",
+                "usage": "",
+                "use_default_iou_values": false
+              },
+              "label": {
+                "text": "AS64512-CE1",
+                "style": "font-family: TypeWriter;font-size: 10.0;font-weight: bold;fill: #000000;fill-opacity: 1.0;",
+                "x": -21,
+                "y": -27,
+                "rotation": 0
+              },
+              "symbol": ":/symbols/affinity/square/blue/router.svg",
+              "x": 870,
+              "y": -180,
+              "z": 1,
+              "locked": false,
+              "port_name_format": "Ethernet{segment0}/{port0}",
+              "port_segment_size": 4,
+              "first_port_name": null,
+              "custom_adapters": [],
+              "tags": [
+                "device_type:cisco_ios_telnet"
+              ],
+              "template_id": "cc8dbf81-03b7-4dc5-99fc-f2947cb4998e",
+              "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+              "node_directory": "/home/yueguobin/GNS3/projects/85835ce2-00fd-4766-be5e-26b024da510a/project-files/iou/fa0bf572-940f-4f7d-b27b-ae5a698ecf66",
+              "status": "stopped",
+              "command_line": "",
+              "width": 60,
+              "height": 60,
+              "ports": [
+                {
+                  "name": "Ethernet0/0",
+                  "short_name": "e0/0",
+                  "adapter_number": 0,
+                  "adapter_type": null,
+                  "port_number": 0,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet0/1",
+                  "short_name": "e0/1",
+                  "adapter_number": 0,
+                  "adapter_type": null,
+                  "port_number": 1,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet0/2",
+                  "short_name": "e0/2",
+                  "adapter_number": 0,
+                  "adapter_type": null,
+                  "port_number": 2,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet0/3",
+                  "short_name": "e0/3",
+                  "adapter_number": 0,
+                  "adapter_type": null,
+                  "port_number": 3,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet1/0",
+                  "short_name": "e1/0",
+                  "adapter_number": 1,
+                  "adapter_type": null,
+                  "port_number": 0,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet1/1",
+                  "short_name": "e1/1",
+                  "adapter_number": 1,
+                  "adapter_type": null,
+                  "port_number": 1,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet1/2",
+                  "short_name": "e1/2",
+                  "adapter_number": 1,
+                  "adapter_type": null,
+                  "port_number": 2,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet1/3",
+                  "short_name": "e1/3",
+                  "adapter_number": 1,
+                  "adapter_type": null,
+                  "port_number": 3,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet2/0",
+                  "short_name": "e2/0",
+                  "adapter_number": 2,
+                  "adapter_type": null,
+                  "port_number": 0,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet2/1",
+                  "short_name": "e2/1",
+                  "adapter_number": 2,
+                  "adapter_type": null,
+                  "port_number": 1,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet2/2",
+                  "short_name": "e2/2",
+                  "adapter_number": 2,
+                  "adapter_type": null,
+                  "port_number": 2,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet2/3",
+                  "short_name": "e2/3",
+                  "adapter_number": 2,
+                  "adapter_type": null,
+                  "port_number": 3,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet3/0",
+                  "short_name": "e3/0",
+                  "adapter_number": 3,
+                  "adapter_type": null,
+                  "port_number": 0,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet3/1",
+                  "short_name": "e3/1",
+                  "adapter_number": 3,
+                  "adapter_type": null,
+                  "port_number": 1,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet3/2",
+                  "short_name": "e3/2",
+                  "adapter_number": 3,
+                  "adapter_type": null,
+                  "port_number": 2,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Ethernet3/3",
+                  "short_name": "e3/3",
+                  "adapter_number": 3,
+                  "adapter_type": null,
+                  "port_number": 3,
+                  "link_type": "ethernet",
+                  "data_link_types": {
+                    "Ethernet": "DLT_EN10MB"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Serial4/0",
+                  "short_name": "s4/0",
+                  "adapter_number": 4,
+                  "adapter_type": null,
+                  "port_number": 0,
+                  "link_type": "serial",
+                  "data_link_types": {
+                    "Frame Relay": "DLT_FRELAY",
+                    "Cisco HDLC": "DLT_C_HDLC",
+                    "Cisco PPP": "DLT_PPP_SERIAL"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Serial4/1",
+                  "short_name": "s4/1",
+                  "adapter_number": 4,
+                  "adapter_type": null,
+                  "port_number": 1,
+                  "link_type": "serial",
+                  "data_link_types": {
+                    "Frame Relay": "DLT_FRELAY",
+                    "Cisco HDLC": "DLT_C_HDLC",
+                    "Cisco PPP": "DLT_PPP_SERIAL"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Serial4/2",
+                  "short_name": "s4/2",
+                  "adapter_number": 4,
+                  "adapter_type": null,
+                  "port_number": 2,
+                  "link_type": "serial",
+                  "data_link_types": {
+                    "Frame Relay": "DLT_FRELAY",
+                    "Cisco HDLC": "DLT_C_HDLC",
+                    "Cisco PPP": "DLT_PPP_SERIAL"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Serial4/3",
+                  "short_name": "s4/3",
+                  "adapter_number": 4,
+                  "adapter_type": null,
+                  "port_number": 3,
+                  "link_type": "serial",
+                  "data_link_types": {
+                    "Frame Relay": "DLT_FRELAY",
+                    "Cisco HDLC": "DLT_C_HDLC",
+                    "Cisco PPP": "DLT_PPP_SERIAL"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Serial5/0",
+                  "short_name": "s5/0",
+                  "adapter_number": 5,
+                  "adapter_type": null,
+                  "port_number": 0,
+                  "link_type": "serial",
+                  "data_link_types": {
+                    "Frame Relay": "DLT_FRELAY",
+                    "Cisco HDLC": "DLT_C_HDLC",
+                    "Cisco PPP": "DLT_PPP_SERIAL"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Serial5/1",
+                  "short_name": "s5/1",
+                  "adapter_number": 5,
+                  "adapter_type": null,
+                  "port_number": 1,
+                  "link_type": "serial",
+                  "data_link_types": {
+                    "Frame Relay": "DLT_FRELAY",
+                    "Cisco HDLC": "DLT_C_HDLC",
+                    "Cisco PPP": "DLT_PPP_SERIAL"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Serial5/2",
+                  "short_name": "s5/2",
+                  "adapter_number": 5,
+                  "adapter_type": null,
+                  "port_number": 2,
+                  "link_type": "serial",
+                  "data_link_types": {
+                    "Frame Relay": "DLT_FRELAY",
+                    "Cisco HDLC": "DLT_C_HDLC",
+                    "Cisco PPP": "DLT_PPP_SERIAL"
+                  },
+                  "mac_address": null
+                },
+                {
+                  "name": "Serial5/3",
+                  "short_name": "s5/3",
+                  "adapter_number": 5,
+                  "adapter_type": null,
+                  "port_number": 3,
+                  "link_type": "serial",
+                  "data_link_types": {
+                    "Frame Relay": "DLT_FRELAY",
+                    "Cisco HDLC": "DLT_C_HDLC",
+                    "Cisco PPP": "DLT_PPP_SERIAL"
+                  },
+                  "mac_address": null
+                }
+              ],
+              "console_host": "0.0.0.0"
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

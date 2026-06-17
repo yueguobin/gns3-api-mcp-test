@@ -214,6 +214,15 @@ def first_id(list_result, id_key: str = "project_id", list_key: str = "projects"
     return None
 
 
+def first_node(list_result):
+    """Return the first node dict from a ``node_list`` result, or ``None``."""
+    data, _ = payload(list_result)
+    items = data if isinstance(data, list) else (data or {}).get("nodes", [])
+    if isinstance(items, list) and items and isinstance(items[0], dict):
+        return items[0]
+    return None
+
+
 def save_record(
     script_file: str | Path,
     *,

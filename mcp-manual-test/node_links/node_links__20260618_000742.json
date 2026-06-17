@@ -1,0 +1,87 @@
+{
+  "tool": "node_links",
+  "called_at": "2026-06-18T00:07:42",
+  "elapsed_ms": 25.0,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+      "node_id": "fa0bf572-940f-4f7d-b27b-ae5a698ecf66"
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "node_id": {
+          "description": "UUID of the node",
+          "title": "Node Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "node_id"
+      ],
+      "title": "node_linksArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "links": [
+                {
+                  "nodes": [
+                    {
+                      "node_id": "fa0bf572-940f-4f7d-b27b-ae5a698ecf66",
+                      "adapter_number": 0,
+                      "port_number": 0,
+                      "label": {
+                        "text": "0/0",
+                        "style": "font-family: TypeWriter;font-size: 10.0;font-weight: bold;fill: #000000;fill-opacity: 1.0;"
+                      }
+                    },
+                    {
+                      "node_id": "a09b002a-4703-4d82-b5ea-9a3897fe5ee5",
+                      "adapter_number": 0,
+                      "port_number": 2,
+                      "label": {
+                        "text": "0/2",
+                        "style": "font-family: TypeWriter;font-size: 10.0;font-weight: bold;fill: #000000;fill-opacity: 1.0;"
+                      }
+                    }
+                  ],
+                  "suspend": false,
+                  "link_style": {},
+                  "filters": {},
+                  "show_filters_icon": true,
+                  "link_id": "97309005-d3ad-4b58-a208-24b76eb4a66e",
+                  "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+                  "link_type": "ethernet",
+                  "capturing": false,
+                  "capture_file_name": null,
+                  "capture_file_path": null,
+                  "capture_compute_id": null,
+                  "wireshark": false
+                }
+              ],
+              "count": 1
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}
