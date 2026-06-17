@@ -29,8 +29,16 @@ wheels/
 
 # Virtual environments
 venv/
+.venv/
 ENV/
 env/
+
+# Secrets / local config
+.env
+.env.local
+
+# 手工测试运行记录（每次跑 test_*.py 生成的 timestamped 记录；想保留样本用 git add -f）
+mcp-manual-test/**/*__20*.json
 
 # IDE
 .vscode/
