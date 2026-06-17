@@ -1,0 +1,39 @@
+{
+  "tool": "project_load",
+  "called_at": "2026-06-17T23:47:52",
+  "elapsed_ms": 19.0,
+  "call": {
+    "arguments": {
+      "path": "/tmp/nonexistent.gns3"
+    },
+    "input_schema": {
+      "properties": {
+        "path": {
+          "description": "Filesystem path to the .gns3 project file",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "project_loadArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": true,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": "Error executing tool project_load: Unknown Status: '/tmp/nonexistent.gns3' does not exist on the controller (Original 409 Error)",
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": true
+    }
+  }
+}

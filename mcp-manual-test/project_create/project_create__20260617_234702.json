@@ -1,0 +1,63 @@
+{
+  "tool": "project_create",
+  "called_at": "2026-06-17T23:47:02",
+  "elapsed_ms": 27.1,
+  "call": {
+    "arguments": {
+      "name": "mcp-test-project"
+    },
+    "input_schema": {
+      "properties": {
+        "name": {
+          "description": "Project name",
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "project_createArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "name": "mcp-test-project",
+              "project_id": "de122fa3-238e-488b-938d-884da3c90ffd",
+              "path": "/home/yueguobin/GNS3/projects/de122fa3-238e-488b-938d-884da3c90ffd",
+              "auto_close": true,
+              "auto_open": false,
+              "auto_start": false,
+              "scene_height": 1000,
+              "scene_width": 2000,
+              "zoom": 100,
+              "show_layers": false,
+              "snap_to_grid": false,
+              "show_grid": false,
+              "grid_size": 75,
+              "drawing_grid_size": 25,
+              "show_interface_labels": true,
+              "supplier": null,
+              "variables": null,
+              "status": "opened",
+              "filename": "mcp-test-project.gns3",
+              "created_by": "admin"
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

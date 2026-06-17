@@ -1,0 +1,45 @@
+{
+  "tool": "project_delete",
+  "called_at": "2026-06-17T23:47:53",
+  "elapsed_ms": 49.3,
+  "call": {
+    "arguments": {
+      "project_id": "9c1c5b48-6d42-4198-98da-a2cc2bfb8562"
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project to delete",
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "project_deleteArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "message": "Project '9c1c5b48-6d42-4198-98da-a2cc2bfb8562' deleted",
+              "project_id": "9c1c5b48-6d42-4198-98da-a2cc2bfb8562"
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

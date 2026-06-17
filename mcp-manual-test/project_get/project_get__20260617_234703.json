@@ -1,0 +1,63 @@
+{
+  "tool": "project_get",
+  "called_at": "2026-06-17T23:47:03",
+  "elapsed_ms": 22.1,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a"
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project",
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "project_getArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "name": "Test_Project",
+              "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+              "path": "/home/yueguobin/GNS3/projects/85835ce2-00fd-4766-be5e-26b024da510a",
+              "auto_close": false,
+              "auto_open": false,
+              "auto_start": false,
+              "scene_height": 1000,
+              "scene_width": 2000,
+              "zoom": 100,
+              "show_layers": false,
+              "snap_to_grid": false,
+              "show_grid": false,
+              "grid_size": 150,
+              "drawing_grid_size": 50,
+              "show_interface_labels": true,
+              "supplier": null,
+              "variables": [],
+              "status": "closed",
+              "filename": "Test_Project.gns3",
+              "created_by": "admin"
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

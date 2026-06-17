@@ -196,6 +196,24 @@ def payload(result):
     return None, None
 
 
+def first_id(list_result, id_key: str = "project_id", list_key: str = "projects"):
+    """Return the first id from a ``*_list`` MCP result, or ``None``.
+
+    Handles both list-typed payloads and ``{list_key: [...]}`` dict payloads.
+    Falls back to ``id`` if ``id_key`` is absent.
+    """
+    data, _ = payload(list_result)
+    items = data if isinstance(data, list) else (data or {}).get(list_key, [])
+    if not isinstance(items, list):
+        return None
+    for it in items:
+        if isinstance(it, dict):
+            v = it.get(id_key) or it.get("id")
+            if v:
+                return str(v)
+    return None
+
+
 def save_record(
     script_file: str | Path,
     *,

@@ -1,0 +1,53 @@
+{
+  "tool": "project_duplicate",
+  "called_at": "2026-06-17T23:47:51",
+  "elapsed_ms": 174.2,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+      "name": "mcp-dup-20260617_234751",
+      "reset_mac_addresses": false
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project to duplicate",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "name": {
+          "description": "New project name",
+          "title": "Name",
+          "type": "string"
+        },
+        "reset_mac_addresses": {
+          "default": false,
+          "description": "Reset MAC addresses for this project",
+          "title": "Reset Mac Addresses",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project_id",
+        "name"
+      ],
+      "title": "project_duplicateArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": true,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": "Error executing tool project_duplicate: Unknown Status: Cannot duplicate project: [('/home/yueguobin/GNS3/projects/85835ce2-00fd-4766-be5e-26b024da510a/project-files/docker/b4e2158a-0801-4c53-a0fe-3fb30bd1bf09/root', '/home/yueguobin/GNS3/projects/56ddc091-3a9e-4dfe-b5c0-5b7315bae2f0/project-files/docker/b4e2158a-0801-4c53-a0fe-3fb30bd1bf09/root', \"[Errno 13] Permission denied: '/home/yueguobin/GNS3/projects/85835ce2-00fd-4766-be5e-26b024da510a/project-files/docker/b4e2158a-0801-4c53-a0fe-3fb30bd1bf09/root'\")] (Original 409 Error)",
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": true
+    }
+  }
+}

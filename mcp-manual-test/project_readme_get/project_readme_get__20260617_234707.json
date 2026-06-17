@@ -1,0 +1,46 @@
+{
+  "tool": "project_readme_get",
+  "called_at": "2026-06-17T23:47:07",
+  "elapsed_ms": 37.2,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a"
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project",
+          "title": "Project Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "project_readme_getArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+              "file": "README.txt",
+              "content": "# Test_Project — 4-AS BGP 负载均衡实验\n\n模拟 4 个自治系统（AS64512 / 64513 / 64514 / 64515）通过 eBGP 多路径（multipath）互联的实验拓扑。每 AS 内部用 OSPF 作 IGP、iBGP + Route Reflector 承载业务路由。\n\n**目标**：演示跨 AS 双链路 ECMP 负载均衡、RR 反射组网、以及 next-hop-self 实现全网端到端可达。\n\n---\n\n## 1. 规模\n- **20 台** Cisco IOU L3 路由器（镜像 `x86_64_crb_linux-adventerprisek9-ms.iol`）\n- **26 条链路**：16 条域内（RR 星型）+ 10 条跨 AS\n- **10 条 eBGP 会话**，分布于 6 个 AS 间互联（4 条双链路 multipath + 2 条单链路）\n\n## 2. 拓扑总览\n4 个 AS 两两全互联（每个 AS 连接其余 3 个 AS）：\n\n```\n            双链路(multipath)\n      64512 ═══════════════ 64513\n       │  ╲               ╱  │\n   单链路 │   ╲  双链路  ╱   │ 单链路\n       │    ╲(对角)╱        │\n       │       ╳            │\n      64514 ═══════════════ 64515\n            双链路(multipath)\n\n  对角线：64512↔64515（双）、64513↔64514（双）\n```\n\n## 3. 每 AS 结构（5 节点 × 4 AS）\n| 角色 | 职责 | Loopback0 |\n|------|------|-----------|\n| **PE1** | 边界路由器（eBGP + iBGP client） | 10.<AS>.1.1/32 |\n| **PE2** | 边界路由器（eBGP + iBGP client） | 10.<AS>.2.1/32 |\n| **RR**  | 路由反射器（4 个 RR-client） | 10.<AS>.3.1/32 |\n| **CE1** | 客户端（iBGP client） | 10.<AS>.4.1/32 |\n| **CE2** | 客户端（iBGP client） | 10.<AS>.5.1/32 |\n\n- **OSPF area 0**：`network 10.<AS>.0.0 0.0.255.255 area 0`，承载域内 loopback + 互联网段可达性。\n- **iBGP**：RR 作反射中心，PE1/PE2/CE1/CE2 为 client。iBGP **不**通告 loopback（BGP 表干净，仅承载外部路由）。\n- **eBGP**：PE1/PE2 作边界，每 border 用 `network` 通告本 AS 的 5 个 loopback；双链路在 `address-family ipv4` 下 `maximum-paths 2`。\n\n## 4. 地址规划\n- **域内互联**（RR 星型）：`10.<AS末两位>.10-13.0/30`，RR 端 `.1`，各 spoke 的 e0/0 为 `.2`\n- **Loopback0**：`10.<AS末两位>.<角色>.1/32`（PE1=1 / PE2=2 / RR=3 / CE1=4 / CE2=5）\n- **跨 AS**：`172.16.N.0/30`（AS 号小的一端取 `.1`）\n\n## 5. 跨 AS 链路表（172.16.x）\n| AS 对 | 子网 | 端点 | 类型 |\n|-------|------|------|------|\n| 64512 ↔ 64513 | 172.16.1.0/30、172.16.2.0/30 | PE1 ↔ PE1 | 双链路 multipath |\n| 64513 ↔ 64514 | 172.16.3.0/30、172.16.4.0/30 | PE2 ↔ PE1 | 双链路 multipath |\n| 64514 ↔ 64515 | 172.16.5.0/30、172.16.6.0/30 | PE2 ↔ PE1 | 双链路 multipath |\n| 64512 ↔ 64515 | 172.16.8.0/30、172.16.9.0/30 | PE2 ↔ PE2 | 双链路 multipath |\n| 64512 ↔ 64514 | 172.16.7.0/30 | PE2 ↔ PE2 | 单链路（对角） |\n| 64513 ↔ 64515 | 172.16.10.0/30 | PE1 ↔ PE2 | 单链路 |\n\n## 6. next-hop-self（端到端可达的关键）\n各 AS 的 PE1/PE2 在 `address-family ipv4` 下对 RR 邻居设 `next-hop-self`，把 eBGP 远端路由的 next-hop（原本为不可达的 172.16.x）改写为 border 的域内 RR-facing IP，使 CE 上远端路由可装表，实现全网 CE 端到端可达。\n\n## 7. 验证命令\n```\nshow ip bgp summary                       # 查 eBGP/iBGP 邻居状态与前缀数\nshow ip bgp <prefix>                      # 看是否 multipath（*m 标记）\nshow ip cef <prefix>                      # 看负载均衡下一跳数（双链路应 2 个）\nshow ip route <prefix>                    # 确认远端路由装表与 next-hop\nping <远端loopback> source loopback0      # CE 跨 AS 端到端测试（务必 source loopback0）\n```\n\n> **注意**：CE ping 远端 loopback 必须 `source loopback0`。CE 接口所在域内网段（10.x.12/13.0/30）不被 border `network` 通告给远端 AS，若以接口 IP 为源，回包无路由；用 CE loopback（被通告）作源才双向可达。\n\n## 8. 运行说明\n- 全部 20 节点配置已 `write memory` 持久化到 startup-config。\n- 节点启动后约 70s 完成 boot；BGP 全网收敛需再等数十秒。\n- transit 路径自然涌现：例如 64515-PE2 到 64512 的 loopback 可见 3 条路径（2 条直连 multipath + 1 条经 64513 transit，长 AS_PATH 不入选 multipath）。\n"
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

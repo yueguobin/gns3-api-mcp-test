@@ -1,0 +1,142 @@
+{
+  "tool": "project_update",
+  "called_at": "2026-06-17T23:47:09",
+  "elapsed_ms": 35.2,
+  "call": {
+    "arguments": {
+      "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+      "show_grid": true
+    },
+    "input_schema": {
+      "properties": {
+        "project_id": {
+          "description": "UUID of the project to update",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "name": {
+          "default": null,
+          "description": "New project name",
+          "title": "Name",
+          "type": "string"
+        },
+        "auto_close": {
+          "default": null,
+          "description": "Close project when last client leaves",
+          "title": "Auto Close",
+          "type": "boolean"
+        },
+        "auto_open": {
+          "default": null,
+          "description": "Project opens when GNS3 starts",
+          "title": "Auto Open",
+          "type": "boolean"
+        },
+        "auto_start": {
+          "default": null,
+          "description": "Project starts when opened",
+          "title": "Auto Start",
+          "type": "boolean"
+        },
+        "scene_width": {
+          "default": null,
+          "description": "Width of the drawing area",
+          "title": "Scene Width",
+          "type": "integer"
+        },
+        "scene_height": {
+          "default": null,
+          "description": "Height of the drawing area",
+          "title": "Scene Height",
+          "type": "integer"
+        },
+        "zoom": {
+          "default": null,
+          "description": "Zoom of the drawing area",
+          "title": "Zoom",
+          "type": "integer"
+        },
+        "show_layers": {
+          "default": null,
+          "description": "Show layers on the drawing area",
+          "title": "Show Layers",
+          "type": "boolean"
+        },
+        "snap_to_grid": {
+          "default": null,
+          "description": "Snap to grid on the drawing area",
+          "title": "Snap To Grid",
+          "type": "boolean"
+        },
+        "show_grid": {
+          "default": null,
+          "description": "Show the grid on the drawing area",
+          "title": "Show Grid",
+          "type": "boolean"
+        },
+        "grid_size": {
+          "default": null,
+          "description": "Grid size for the drawing area for nodes",
+          "title": "Grid Size",
+          "type": "integer"
+        },
+        "drawing_grid_size": {
+          "default": null,
+          "description": "Grid size for the drawing area for drawings",
+          "title": "Drawing Grid Size",
+          "type": "integer"
+        },
+        "show_interface_labels": {
+          "default": null,
+          "description": "Show interface labels on the drawing area",
+          "title": "Show Interface Labels",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "title": "project_updateArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "name": "Test_Project",
+              "project_id": "85835ce2-00fd-4766-be5e-26b024da510a",
+              "path": "/home/yueguobin/GNS3/projects/85835ce2-00fd-4766-be5e-26b024da510a",
+              "auto_close": false,
+              "auto_open": false,
+              "auto_start": false,
+              "scene_height": 1000,
+              "scene_width": 2000,
+              "zoom": 100,
+              "show_layers": false,
+              "snap_to_grid": false,
+              "show_grid": true,
+              "grid_size": 150,
+              "drawing_grid_size": 50,
+              "show_interface_labels": true,
+              "supplier": null,
+              "variables": [],
+              "status": "closed",
+              "filename": "Test_Project.gns3",
+              "created_by": "admin"
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}
