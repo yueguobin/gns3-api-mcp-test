@@ -1,0 +1,47 @@
+{
+  "tool": "compute_images",
+  "called_at": "2026-06-17T23:21:59",
+  "elapsed_ms": 20.2,
+  "call": {
+    "arguments": {
+      "compute_id": "00000000-0000-0000-0000-000000000000",
+      "emulator": "qemu"
+    },
+    "input_schema": {
+      "properties": {
+        "emulator": {
+          "description": "Emulator type (e.g. qemu, iou, docker)",
+          "title": "Emulator",
+          "type": "string"
+        },
+        "compute_id": {
+          "description": "Compute UUID from compute_list output",
+          "format": "uuid",
+          "title": "Compute Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "emulator",
+        "compute_id"
+      ],
+      "title": "compute_imagesArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": true,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": "Error executing tool compute_images: Unknown Status: Compute ID 00000000-0000-0000-0000-000000000000 doesn't exist (Original 404 Error)",
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": true
+    }
+  }
+}

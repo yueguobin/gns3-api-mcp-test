@@ -1,0 +1,40 @@
+{
+  "tool": "compute_get",
+  "called_at": "2026-06-17T23:21:22",
+  "elapsed_ms": 6.3,
+  "call": {
+    "arguments": {
+      "compute_id": "local"
+    },
+    "input_schema": {
+      "properties": {
+        "compute_id": {
+          "description": "Compute UUID from compute_list output",
+          "format": "uuid",
+          "title": "Compute Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "compute_id"
+      ],
+      "title": "compute_getArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": true,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": "Error executing tool compute_get: 1 validation error for compute_getArguments\ncompute_id\n  Input should be a valid UUID, invalid character: found `l` at 1 [type=uuid_parsing, input_value='local', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/uuid_parsing",
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": true
+    }
+  }
+}

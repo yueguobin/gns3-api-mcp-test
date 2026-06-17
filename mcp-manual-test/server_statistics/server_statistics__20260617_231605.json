@@ -1,0 +1,80 @@
+{
+  "tool": "server_statistics",
+  "called_at": "2026-06-17T23:16:05",
+  "elapsed_ms": 36.2,
+  "call": {
+    "arguments": {},
+    "input_schema": {
+      "properties": {},
+      "title": "server_statisticsArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "computes": [
+                {
+                  "compute_id": "local",
+                  "compute_name": "home (controller)",
+                  "statistics": {
+                    "memory_total": 12371943424,
+                    "memory_free": 10878754816,
+                    "memory_used": 1493188608,
+                    "swap_total": 1024454656,
+                    "swap_free": 958394368,
+                    "swap_used": 66060288,
+                    "cpu_usage_percent": 0,
+                    "memory_usage_percent": 12,
+                    "swap_usage_percent": 6,
+                    "disk_usage_percent": 83,
+                    "load_average_percent": [
+                      56,
+                      56,
+                      57
+                    ]
+                  }
+                }
+              ],
+              "projects": {
+                "total": 1,
+                "opened": 0,
+                "closed": 1
+              },
+              "nodes": {
+                "total": 21,
+                "open_project_nodes": 0,
+                "closed_project_nodes": 21,
+                "by_type": {
+                  "iou": 20,
+                  "docker": 1
+                },
+                "by_status": {}
+              },
+              "links": {
+                "total": 26,
+                "capturing": 0
+              },
+              "webwireshark": {
+                "total_containers": 0,
+                "running_containers": 0,
+                "active_sessions": 0,
+                "containers": []
+              }
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}

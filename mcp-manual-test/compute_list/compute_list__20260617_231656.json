@@ -1,0 +1,34 @@
+{
+  "tool": "compute_list",
+  "called_at": "2026-06-17T23:16:56",
+  "elapsed_ms": 25.6,
+  "call": {
+    "arguments": {},
+    "input_schema": {
+      "properties": {},
+      "title": "compute_listArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "computes": [],
+              "count": 0
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}
