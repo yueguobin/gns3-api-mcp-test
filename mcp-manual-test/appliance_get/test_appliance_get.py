@@ -1,10 +1,31 @@
 #!/usr/bin/env python3
 """Test the MCP tool ``appliance_get``.
 
-Connects to the GNS3 server via MCP (SSE), calls appliance_get to retrieve
-detailed information for a single appliance.
-By default it auto-discovers an appliance ID via appliance_list;
-use --appliance-id to specify one directly.
+Tool description
+----------------
+Get detailed information about a specific appliance from the GNS3
+appliance/template library.
+
+Input parameters
+----------------
+appliance_id : str (UUID, required)
+    UUID of the appliance to retrieve, e.g.
+    ``"cf5d1f22-953a-434d-a07e-6e17de85acf1"``.
+
+Returns
+-------
+Full appliance definition object containing:
+  - Basic info: name, category, description, vendor/product name
+  - QEMU config: ram, cpus, adapter_type, console_type, etc.
+  - Image list: filename, version, md5sum, filesize, download_url
+  - Version matrix: version name to image mapping
+  - Symbol, usage instructions, port name format, etc.
+
+Test flow
+---------
+Connects to GNS3 via MCP (SSE), calls appliance_get to retrieve detailed
+information for a single appliance. By default it auto-discovers an
+appliance ID via appliance_list; use --appliance-id to specify one directly.
 
 Usage::
 
