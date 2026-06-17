@@ -1,1 +1,1 @@
-# GNS3 MCP 测试共用库
+# Shared library for GNS3 MCP manual testing

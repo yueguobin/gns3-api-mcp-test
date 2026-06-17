@@ -1,17 +1,17 @@
-"""GNS3 MCP 测试通用客户端。
+"""Common client for GNS3 MCP manual testing.
 
-封装：.env 加载 → SSE 连接 → 调用工具 → 美化输出。
-所有 mcp-manual-test/<tool>/test_*.py 共用本模块，避免重复样板。
+Pipeline: load .env -> SSE connect -> call tool -> pretty-print.
+All mcp-manual-test/<tool>/test_*.py scripts share this module to avoid boilerplate.
 
-用法（在某个工具的测试脚本里）:
+Usage (inside a tool's test script)::
 
     import sys
     from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 把 mcp-manual-test/ 加入 sys.path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from _lib.gns3_mcp import connect, call_tool, format_result, list_tools
 
     async def main():
-        async with connect() as session:           # 连接 + initialize
+        async with connect() as session:
             result, elapsed = await call_tool(session, "appliance_get", {"appliance_id": "..."})
         print(format_result(result))
 """
@@ -31,9 +31,9 @@ from mcp.client.sse import sse_client
 
 
 def _load_env() -> None:
-    """从本文件位置向上查找项目根的 .env 并加载（不依赖 python-dotenv）。
+    """Walk up from this file's location to find the project root .env.
 
-    已存在的环境变量优先于 .env 中的值。
+    Existing environment variables take precedence over .env values.
     """
     here = Path(__file__).resolve()
     for d in [here.parent, *here.parents]:
@@ -46,38 +46,37 @@ def _load_env() -> None:
                 key, val = line.split("=", 1)
                 os.environ.setdefault(key.strip(), val.strip())
             return
-    # 没找到 .env 也没关系，环境变量里可能已有配置
 
 
 def config() -> tuple[str, str]:
-    """返回 (GNS3_MCP_URL, GNS3_MCP_TOKEN)，缺失则直接报错退出。"""
+    """Return (GNS3_MCP_URL, GNS3_MCP_TOKEN). Exits with error if missing."""
     _load_env()
     url = os.environ.get("GNS3_MCP_URL")
     token = os.environ.get("GNS3_MCP_TOKEN")
     if not url or not token:
         raise SystemExit(
-            "缺少 GNS3_MCP_URL / GNS3_MCP_TOKEN，请在项目根目录的 .env 中配置（参见 .env.example）"
+            "GNS3_MCP_URL / GNS3_MCP_TOKEN not set. Configure them in the project root .env "
+            "(see .env.example)"
         )
     return url, token
 
 
 def headers() -> dict[str, str]:
-    """构造 MCP 请求头（Bearer token 鉴权）。"""
+    """Build MCP request headers with Bearer token authentication."""
     _, token = config()
     return {"Authorization": f"Bearer {token}"}
 
 
 @asynccontextmanager
 async def connect():
-    """连接 GNS3 MCP（SSE transport），yield 一个已完成 initialize 的 ClientSession。
+    """Connect to GNS3 MCP via SSE transport, yield an initialized ClientSession.
 
-    用法::
+    Usage::
 
         async with connect() as session:
-            ...  # 在同一个会话里可多次调用工具
+            ...  # call multiple tools within the same session
     """
     url, _ = config()
-    # sse_client 会: 1) 建立 SSE GET 长连接; 2) 收到 endpoint 后向其 POST JSON-RPC。
     async with sse_client(url, headers=headers()) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -85,28 +84,29 @@ async def connect():
 
 
 async def list_tools(session: ClientSession):
-    """返回服务器暴露的全部工具对象。"""
+    """Return all tools exposed by the server."""
     return (await session.list_tools()).tools
 
 
 def find_tool(tools, name: str):
-    """在工具列表里按名称查找，返回工具对象或 None。"""
+    """Look up a tool by name; return the tool object or None."""
     return next((t for t in tools if t.name == name), None)
 
 
 async def call_tool(session: ClientSession, name: str, arguments: dict | None = None):
-    """调用一个工具，返回 (CallToolResult, 耗时秒数)。"""
+    """Call a tool and return (CallToolResult, elapsed_seconds)."""
     t0 = time.perf_counter()
     result = await session.call_tool(name, arguments or {})
     return result, time.perf_counter() - t0
 
 
 def _unwrap_envelope(obj):
-    """递归解开 {"type":"text","text": <str|obj>} 形式的嵌套包裹。
+    """Recursively unwrap ``{"type":"text","text": <str|obj>}`` nested wrappers.
 
-    GNS3 MCP 的部分工具会把结果再套一层 text content envelope，
-    例如 appliance_list 的 text 实为 '{"type":"text","text":"{...}"}'。
-    返回最内层对象；若内层是普通文本字符串则返回该字符串。
+    Some GNS3 MCP tools wrap their result in an extra text content envelope,
+    e.g. appliance_list text is '{"type":"text","text":"{...}"}'.
+    Returns the innermost object; returns a plain string if the innermost
+    layer is a non-JSON string.
     """
     for _ in range(8):
         if isinstance(obj, dict) and set(obj.keys()) <= {"type", "text"} and "text" in obj:
@@ -115,7 +115,7 @@ def _unwrap_envelope(obj):
                 try:
                     inner = json.loads(inner)
                 except ValueError:
-                    return inner  # 内层是普通文本，停止解包
+                    return inner
             obj = inner
             continue
         break
@@ -123,7 +123,7 @@ def _unwrap_envelope(obj):
 
 
 def _pretty_json_text(text: str) -> str:
-    """若文本是 JSON（含嵌套 envelope），解开并美化；否则原样返回。"""
+    """Pretty-print JSON text (handles nested envelopes); return as-is if not JSON."""
     try:
         obj = json.loads(text)
     except (ValueError, TypeError):
@@ -138,7 +138,7 @@ def _pretty_json_text(text: str) -> str:
 
 
 def format_result(result) -> str:
-    """把 CallToolResult 的 ``content`` 块渲染成可读字符串（仅限 MCP 标准 wire 层）。"""
+    """Render CallToolResult's ``content`` blocks as a human-readable string (wire layer only)."""
     lines: list[str] = []
     lines.append(f"isError: {bool(getattr(result, 'isError', False))}")
 
@@ -153,10 +153,11 @@ def format_result(result) -> str:
 
 
 def raw_result(result) -> dict:
-    """取 MCP 原始返回（wire 层数据），移除 SDK 私有字段。
+    """Extract the raw wire-level MCP return data, stripping SDK-private fields.
 
-    并将 ``content[].text`` 中 GNS3 服务器多余包裹的
-    ``{"type":"text","text":"真实数据"}`` 层递归解开。
+    Also unwraps the superfluous ``{"type":"text","text":"<real_data>"}`` layer
+    that the GNS3 server nests inside ``content[].text``, converting each
+    JSON-string layer into a parsed object for readability.
     """
     raw = json.loads(result.model_dump_json())
     raw.pop("structuredContent", None)
@@ -165,7 +166,7 @@ def raw_result(result) -> dict:
         if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
             try:
                 parsed = json.loads(block["text"])
-                # 内层 text 也是 JSON 字符串，同样展开
+                # The inner text is also a JSON string — parse it too
                 if isinstance(parsed, dict) and "text" in parsed and isinstance(parsed["text"], str):
                     try:
                         parsed["text"] = json.loads(parsed["text"])
@@ -178,11 +179,11 @@ def raw_result(result) -> dict:
 
 
 def payload(result):
-    """从 MCP 返回的 ``content[0].text`` 里取出真实数据对象，返回 ``(data, source)``。
+    """Extract real data from ``content[0].text``, return ``(data, source)``.
 
-    只走标准 MCP 的 ``content`` 数组（与 Claude Code 行为一致），
-    不做 SDK 私有的 ``structuredContent`` 提取。
-    遇到后端双重 envelope 时自动解开。
+    Only uses the standard MCP ``content`` array (behaves like Claude Code),
+    ignoring the SDK-private ``structuredContent`` field.
+    Auto-unwraps backend double envelopes.
     """
     for block in getattr(result, "content", []) or []:
         if getattr(block, "type", "") == "text":
@@ -204,13 +205,12 @@ def save_record(
     elapsed: float,
     input_schema: dict | None = None,
 ) -> Path:
-    """把本次调用记录写到「脚本同目录」下的一个 JSON 文件，返回文件路径。
+    """Write a JSON record of this tool invocation next to the script file.
 
-    记录包含三部分：
-      - 调用数据：工具名、入参、入参 schema、调用时间、耗时；
-      - MCP 原始返回：未解包的 wire 层结果（raw_result）；
-      - 格式化内容：解开 envelope 后的人类可读文本（formatted）。
-    文件名形如 ``<tool>__YYYYmmdd_HHMMSS.json``，每次运行新增一个（保留历史）。
+    Record contains:
+      - Call metadata: tool name, arguments, schema, timestamp, elapsed
+      - MCP raw return: unwrapped wire-level data (``raw_result``)
+    Filename: ``<tool>__YYYYmmdd_HHMMSS.json`` — one file per run (history kept).
     """
     out_dir = Path(script_file).resolve().parent
     now = datetime.datetime.now()
@@ -225,7 +225,7 @@ def save_record(
         },
         "result": {
             "is_error": bool(getattr(result, "isError", False)),
-            "raw": raw_result(result),  # MCP 原始返回（wire 层数据，不含 SDK 私有字段）
+            "raw": raw_result(result),
         },
     }
     path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -241,9 +241,9 @@ async def call_and_record(
     input_schema: dict | None = None,
     save: bool = True,
 ):
-    """调用工具并（默认）把调用数据 + 原始返回落盘到脚本同目录。
+    """Call a tool and (by default) persist call + raw return to a JSON record.
 
-    返回 ``(result, elapsed, saved_path_or_None)``。
+    Returns ``(result, elapsed, saved_path_or_None)``.
     """
     result, elapsed = await call_tool(session, tool, arguments)
     saved = None
@@ -252,10 +252,10 @@ async def call_and_record(
             script_file, tool=tool, arguments=arguments, result=result,
             elapsed=elapsed, input_schema=input_schema,
         )
-        print(f"💾 已保存记录: {saved}")
+        print(f"💾 Record saved: {saved}")
     return result, elapsed, saved
 
 
 def run(coro):
-    """运行 async 协程的快捷入口（统一事件循环处理）。"""
+    """Convenience entry-point to run an async coroutine."""
     return asyncio.run(coro)
