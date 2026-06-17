@@ -1,0 +1,937 @@
+{
+  "tool": "appliance_list",
+  "called_at": "2026-06-17T23:09:42",
+  "elapsed_ms": 237.2,
+  "call": {
+    "arguments": {
+      "fields": [
+        "name",
+        "category"
+      ]
+    },
+    "input_schema": {
+      "properties": {
+        "fields": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: return only these fields. e.g. [\"name\",\"category\"]. Available: name, category, description, vendor_name, product_name, status, availability, images, versions, tags, symbol, usage, builtin",
+          "title": "Fields"
+        }
+      },
+      "title": "appliance_listArguments",
+      "type": "object"
+    }
+  },
+  "result": {
+    "is_error": false,
+    "raw": {
+      "meta": null,
+      "content": [
+        {
+          "type": "text",
+          "text": {
+            "type": "text",
+            "text": {
+              "appliances": [
+                {
+                  "name": "Cisco ISE",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Cisco IOU L3",
+                  "category": "router"
+                },
+                {
+                  "name": "Alpine Cloud Guest",
+                  "category": "guest"
+                },
+                {
+                  "name": "TacacsGUI",
+                  "category": "guest"
+                },
+                {
+                  "name": "AsteriskNOW / FreePBX",
+                  "category": "guest"
+                },
+                {
+                  "name": "ClearOS CE",
+                  "category": "firewall"
+                },
+                {
+                  "name": "OpenMediaVault",
+                  "category": "guest"
+                },
+                {
+                  "name": "OpenWrt",
+                  "category": "router"
+                },
+                {
+                  "name": "Juniper vMX vFP",
+                  "category": "router"
+                },
+                {
+                  "name": "Clavister NetWall",
+                  "category": "firewall"
+                },
+                {
+                  "name": "TrueNAS",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco Catalyst 8000V",
+                  "category": "router"
+                },
+                {
+                  "name": "MikroTik CRS328-4C-20S-4S+",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "WordPress",
+                  "category": "guest"
+                },
+                {
+                  "name": "Innovaphone App-Platform",
+                  "category": "guest"
+                },
+                {
+                  "name": "Puppy Linux",
+                  "category": "guest"
+                },
+                {
+                  "name": "OpenBSD",
+                  "category": "guest"
+                },
+                {
+                  "name": "OP5 Monitor",
+                  "category": "guest"
+                },
+                {
+                  "name": "IPFire",
+                  "category": "firewall"
+                },
+                {
+                  "name": "HBCD-PE",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco NX-OSv 9000",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "6WIND Turbo Router",
+                  "category": "router"
+                },
+                {
+                  "name": "FRR",
+                  "category": "router"
+                },
+                {
+                  "name": "FortiSIEM",
+                  "category": "guest"
+                },
+                {
+                  "name": "Security Onion",
+                  "category": "guest"
+                },
+                {
+                  "name": "MikroTik RB4011iGS+",
+                  "category": "router"
+                },
+                {
+                  "name": "Ubuntu Desktop Guest",
+                  "category": "guest"
+                },
+                {
+                  "name": "VyOS Universal Router",
+                  "category": "router"
+                },
+                {
+                  "name": "Brocade Virtual ADX",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Cisco FTDv",
+                  "category": "firewall"
+                },
+                {
+                  "name": "FortiRecorder",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco CSR1000v",
+                  "category": "router"
+                },
+                {
+                  "name": "endhost",
+                  "category": "guest"
+                },
+                {
+                  "name": "Firefox",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco Stealthwatch Management Console",
+                  "category": "firewall"
+                },
+                {
+                  "name": "ipterm",
+                  "category": "guest"
+                },
+                {
+                  "name": "Jupyter 2.7",
+                  "category": "guest"
+                },
+                {
+                  "name": "Innovaphone IPVA",
+                  "category": "guest"
+                },
+                {
+                  "name": "MikroTik RB2011UiAS",
+                  "category": "router"
+                },
+                {
+                  "name": "Citrix SD-WAN",
+                  "category": "router"
+                },
+                {
+                  "name": "Open vSwitch management",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "Asterfusion vAsterNOS campus",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "FortiProxy",
+                  "category": "firewall"
+                },
+                {
+                  "name": "IWS VA",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Arista vEOS",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "NetScaler VPX",
+                  "category": "router"
+                },
+                {
+                  "name": "vRIN",
+                  "category": "guest"
+                },
+                {
+                  "name": "Windows",
+                  "category": "guest"
+                },
+                {
+                  "name": "DNS",
+                  "category": "guest"
+                },
+                {
+                  "name": "OpenNAC",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cumulus VX",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "PA-VM",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Home Assistant",
+                  "category": "guest"
+                },
+                {
+                  "name": "freeRouter",
+                  "category": "router"
+                },
+                {
+                  "name": "MikroTik CCR1036-8G-2S+",
+                  "category": "router"
+                },
+                {
+                  "name": "Juniper vQFX PFE",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "RockyLinux",
+                  "category": "guest"
+                },
+                {
+                  "name": "BIRD",
+                  "category": "router"
+                },
+                {
+                  "name": "SteelHead",
+                  "category": "guest"
+                },
+                {
+                  "name": "Junos Space",
+                  "category": "guest"
+                },
+                {
+                  "name": "vEdgeCloud",
+                  "category": "router"
+                },
+                {
+                  "name": "Cisco DCNM",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco 2691",
+                  "category": "router"
+                },
+                {
+                  "name": "Ubuntu Docker Guest",
+                  "category": "guest"
+                },
+                {
+                  "name": "HuaWei USG6000v",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Windows Server",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco Alpine Linux TRex",
+                  "category": "guest"
+                },
+                {
+                  "name": "Asterfusion AsterNOS-VPP",
+                  "category": "router"
+                },
+                {
+                  "name": "Aruba VMC",
+                  "category": "guest"
+                },
+                {
+                  "name": "FortiSandbox",
+                  "category": "firewall"
+                },
+                {
+                  "name": "ipxe",
+                  "category": "guest"
+                },
+                {
+                  "name": "VPP",
+                  "category": "router"
+                },
+                {
+                  "name": "Cisco NGIPSv",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Cisco IOS XRv",
+                  "category": "router"
+                },
+                {
+                  "name": "vRouter",
+                  "category": "router"
+                },
+                {
+                  "name": "AAA",
+                  "category": "guest"
+                },
+                {
+                  "name": "Sophos XG Firewall",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Network Automation",
+                  "category": "guest"
+                },
+                {
+                  "name": "Juniper vRR",
+                  "category": "router"
+                },
+                {
+                  "name": "VOSS VM",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "Kerio Connect",
+                  "category": "guest"
+                },
+                {
+                  "name": "Stormshield EVA",
+                  "category": "firewall"
+                },
+                {
+                  "name": "FortiWeb",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Cisco FMCv",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Tiny Core Linux",
+                  "category": "guest"
+                },
+                {
+                  "name": "WatchGuard FireboxV",
+                  "category": "firewall"
+                },
+                {
+                  "name": "haproxy",
+                  "category": "guest"
+                },
+                {
+                  "name": "FortiCache",
+                  "category": "guest"
+                },
+                {
+                  "name": "AlpiNet",
+                  "category": "guest"
+                },
+                {
+                  "name": "DANOS",
+                  "category": "router"
+                },
+                {
+                  "name": "Juniper vQFX RE",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "OPNsense",
+                  "category": "firewall"
+                },
+                {
+                  "name": "NixOS",
+                  "category": "guest"
+                },
+                {
+                  "name": "Alpine Linux",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco ASAv",
+                  "category": "firewall"
+                },
+                {
+                  "name": "ReactOS",
+                  "category": "guest"
+                },
+                {
+                  "name": "Ostinato",
+                  "category": "guest"
+                },
+                {
+                  "name": "NethSecurity",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Cisco 3745",
+                  "category": "router"
+                },
+                {
+                  "name": "Infix",
+                  "category": "router"
+                },
+                {
+                  "name": "Micro Core Linux",
+                  "category": "guest"
+                },
+                {
+                  "name": "NETem",
+                  "category": "guest"
+                },
+                {
+                  "name": "Clavister NetShield",
+                  "category": "firewall"
+                },
+                {
+                  "name": "HuaWei AR1000v",
+                  "category": "router"
+                },
+                {
+                  "name": "Kerio Operator",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco IOSv",
+                  "category": "router"
+                },
+                {
+                  "name": "BSDRP",
+                  "category": "router"
+                },
+                {
+                  "name": "Cisco 3640",
+                  "category": "router"
+                },
+                {
+                  "name": "Ostinato Wireshark",
+                  "category": "guest"
+                },
+                {
+                  "name": "CoreOS",
+                  "category": "guest"
+                },
+                {
+                  "name": "Big Cloud Fabric",
+                  "category": "router"
+                },
+                {
+                  "name": "Raspian",
+                  "category": "guest"
+                },
+                {
+                  "name": "FreeNAS",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco IOSvL2",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "Debian",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco 7200",
+                  "category": "router"
+                },
+                {
+                  "name": "OpenWrt Realview",
+                  "category": "router"
+                },
+                {
+                  "name": "Westermo WeOS",
+                  "category": "router"
+                },
+                {
+                  "name": "Cisco CAT IOS-XE 9000v",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "FortiGate",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Cisco IOU L2",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "IMS VA",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Onos",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "StoneWork",
+                  "category": "router"
+                },
+                {
+                  "name": "MikroTik RB3011UiAS",
+                  "category": "router"
+                },
+                {
+                  "name": "FortiAuthenticator",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco 1700",
+                  "category": "router"
+                },
+                {
+                  "name": "MikroTik CCR1072-1G-8S+",
+                  "category": "router"
+                },
+                {
+                  "name": "Oracle Linux Cloud Guest",
+                  "category": "guest"
+                },
+                {
+                  "name": "MikroTik WinBox 2026",
+                  "category": "guest"
+                },
+                {
+                  "name": "ZeroShell",
+                  "category": "router"
+                },
+                {
+                  "name": "Alpine Linux Virt",
+                  "category": "guest"
+                },
+                {
+                  "name": "Fedora Cloud Base",
+                  "category": "guest"
+                },
+                {
+                  "name": "FortiADC Manager",
+                  "category": "guest"
+                },
+                {
+                  "name": "Web Security Virtual Appliance",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Aruba VGW",
+                  "category": "firewall"
+                },
+                {
+                  "name": "LANCOM vRouter",
+                  "category": "router"
+                },
+                {
+                  "name": "FortiMail",
+                  "category": "guest"
+                },
+                {
+                  "name": "Loadbalancer.org Enterprise VA",
+                  "category": "router"
+                },
+                {
+                  "name": "Zentyal Server",
+                  "category": "guest"
+                },
+                {
+                  "name": "vSmart",
+                  "category": "router"
+                },
+                {
+                  "name": "CloudRouter",
+                  "category": "router"
+                },
+                {
+                  "name": "Kali Linux",
+                  "category": "guest"
+                },
+                {
+                  "name": "AlmaLinux",
+                  "category": "guest"
+                },
+                {
+                  "name": "vSRX",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Checkpoint GAiA",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Mininet",
+                  "category": "guest"
+                },
+                {
+                  "name": "Proxmox MG",
+                  "category": "firewall"
+                },
+                {
+                  "name": "MikroTik RB1100AHx4 Dude Edition",
+                  "category": "router"
+                },
+                {
+                  "name": "Open vSwitch with SNMP",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "openSUSE",
+                  "category": "guest"
+                },
+                {
+                  "name": "Sophos UTM Home Edition",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Nokia vSIM",
+                  "category": "router"
+                },
+                {
+                  "name": "FreeBSD",
+                  "category": "guest"
+                },
+                {
+                  "name": "FortiManager",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco IOS XRv 9000",
+                  "category": "router"
+                },
+                {
+                  "name": "HPE VSR1001",
+                  "category": "router"
+                },
+                {
+                  "name": "Open vSwitch",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "Ubuntu Cloud Guest",
+                  "category": "guest"
+                },
+                {
+                  "name": "Citrix SD-WAN Center",
+                  "category": "guest"
+                },
+                {
+                  "name": "ArubaOS-CX Simulation Software",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "Mikrotik WinBox",
+                  "category": "guest"
+                },
+                {
+                  "name": "Python, Go, Perl, PHP",
+                  "category": "guest"
+                },
+                {
+                  "name": "macOS",
+                  "category": "guest"
+                },
+                {
+                  "name": "WatchGuard XTMv",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Cisco 3660",
+                  "category": "router"
+                },
+                {
+                  "name": "Kali Linux CLI",
+                  "category": "guest"
+                },
+                {
+                  "name": "FortiAnalyzer",
+                  "category": "guest"
+                },
+                {
+                  "name": "PacketFence ZEN",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco Flow Collector for NetFlow",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Asterfusion vAsterNOS",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "ntopng",
+                  "category": "guest"
+                },
+                {
+                  "name": "Jupyter",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco 3620",
+                  "category": "router"
+                },
+                {
+                  "name": "MikroTik CRS328-24P-4S+",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "Cisco PyATS",
+                  "category": "guest"
+                },
+                {
+                  "name": "Dell OS9",
+                  "category": "router"
+                },
+                {
+                  "name": "Cisco NX-OSv",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "A10 vThunder",
+                  "category": "router"
+                },
+                {
+                  "name": "Juniper vMX vCP",
+                  "category": "router"
+                },
+                {
+                  "name": "Kerio Control",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Cisco Flow Sensor",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Untangle NG",
+                  "category": "firewall"
+                },
+                {
+                  "name": "FortiADC",
+                  "category": "router"
+                },
+                {
+                  "name": "cEOS",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "Windows-11-Dev-Env",
+                  "category": "guest"
+                },
+                {
+                  "name": "MikroTik RB450Gx4",
+                  "category": "router"
+                },
+                {
+                  "name": "EXOS VM",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "vTM DE",
+                  "category": "router"
+                },
+                {
+                  "name": "vManage",
+                  "category": "router"
+                },
+                {
+                  "name": "Smoothwall Express",
+                  "category": "firewall"
+                },
+                {
+                  "name": "F5 BIG-IP LTM VE",
+                  "category": "router"
+                },
+                {
+                  "name": "IP Cop",
+                  "category": "firewall"
+                },
+                {
+                  "name": "MikroTik RB450G",
+                  "category": "router"
+                },
+                {
+                  "name": "KEMP Free VLM",
+                  "category": "router"
+                },
+                {
+                  "name": "ParrotOS",
+                  "category": "guest"
+                },
+                {
+                  "name": "Chromium",
+                  "category": "guest"
+                },
+                {
+                  "name": "HuaWei NE40E",
+                  "category": "router"
+                },
+                {
+                  "name": "DEFT Linux",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco NX-OSv 9000 Lite",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "ONTAP Simulator",
+                  "category": "guest"
+                },
+                {
+                  "name": "webterm",
+                  "category": "guest"
+                },
+                {
+                  "name": "Toolbox",
+                  "category": "guest"
+                },
+                {
+                  "name": "Sophos iView",
+                  "category": "guest"
+                },
+                {
+                  "name": "vJunos-router",
+                  "category": "router"
+                },
+                {
+                  "name": "Empty VM",
+                  "category": "guest"
+                },
+                {
+                  "name": "HuaWei CE12800",
+                  "category": "multilayer_switch"
+                },
+                {
+                  "name": "RHEL",
+                  "category": "guest"
+                },
+                {
+                  "name": "mcjoin",
+                  "category": "guest"
+                },
+                {
+                  "name": "pfSense",
+                  "category": "firewall"
+                },
+                {
+                  "name": "Windows XP",
+                  "category": "guest"
+                },
+                {
+                  "name": "Juniper vMX",
+                  "category": "router"
+                },
+                {
+                  "name": "Cisco 3725",
+                  "category": "router"
+                },
+                {
+                  "name": "Alcatel 7750",
+                  "category": "router"
+                },
+                {
+                  "name": "F5 BIG-IQ CM",
+                  "category": "guest"
+                },
+                {
+                  "name": "CentOS Cloud Guest",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco 2600",
+                  "category": "router"
+                },
+                {
+                  "name": "Centos",
+                  "category": "guest"
+                },
+                {
+                  "name": "Cisco vWLC",
+                  "category": "guest"
+                },
+                {
+                  "name": "MikroTik CHR",
+                  "category": "router"
+                }
+              ],
+              "count": 220
+            }
+          },
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "isError": false
+    }
+  }
+}
