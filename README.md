@@ -6,15 +6,15 @@ This repository contains the complete test documentation for the GNS3 API MCP Se
 
 - **Total Tools Tested**: 82
 - **Test Coverage**: 100%
-- **Test Stages**: 13
+- **Test Stages**: 18
 - **License**: CC BY-NC-ND 4.0 (attribution, non-commercial, no derivatives)
 
 ## Directory Structure
 
 ```
 mcp_test_docs/
-├── zh/    Chinese documentation (15 files)
-└── en/    English documentation (15 files)
+├── zh/    Chinese documentation (22 files)
+└── en/    English documentation (24 files)
 ```
 
 ## Test Stages
@@ -34,6 +34,17 @@ mcp_test_docs/
 | 11 | Snapshot Management | `snapshot_create`, `snapshot_list`, `snapshot_restore`, `snapshot_delete` |
 | 12 | Advanced Features & Cleanup | `template_create`, `template_update`, `template_delete`, `symbol_upload`, `project_close`, `project_delete`, `image_prune` |
 | 13 | Missing Tools Test | `image_install`, `image_delete`, `link_delete`, `node_delete` |
+| 14 | Batch Array Interface Supplement | array/batch forms of `node_create`, `link_create`, `node_start`, etc. |
+| 15 | c7200 (IOS/Dynamips) Large-Scale Batch | large-scale `node_create` / `node_start` with Dynamips c7200 |
+| 16 | IOSv (QEMU) Large-Scale Batch | large-scale IOSv QEMU node creation/startup |
+| 17 | Alpine Linux (Docker) Node Batch | Docker template batch node tests |
+| 18 | Regression Test | regression of recent backend changes |
+
+## Utility Scripts
+
+| File | Description |
+|------|-------------|
+| [replicate_mesh.py](../mcp-manual-test/replicate_mesh.py) | Batch-replicate a router mesh (nodes + links) on a 225px grid via MCP — see [usage (en)](mcp_test_docs/en/replicate_mesh_usage_en.md) / [使用说明 (zh)](mcp_test_docs/zh/replicate_mesh使用说明.md) |
 
 ## Documentation Files
 
