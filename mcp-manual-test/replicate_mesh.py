@@ -175,8 +175,12 @@ async def repair_links(
                     (by_role[role_a], ad_a, pt_a, by_role[role_b], ad_b, pt_b), key=str))
                 if edge not in existing:
                     missing.append({"link_type": "ethernet",
-                                    "nodes": [by_role[role_a], ad_a, pt_a,
-                                              by_role[role_b], ad_b, pt_b]})
+                                    "nodes": [{"node_id": by_role[role_a],
+                                               "adapter_number": ad_a, "port_number": pt_a,
+                                               "label": {"text": f"eth{ad_a}"}},
+                                              {"node_id": by_role[role_b],
+                                               "adapter_number": ad_b, "port_number": pt_b,
+                                               "label": {"text": f"eth{ad_b}"}}]})
             if missing:
                 for i in range(0, len(missing), LINK_BATCH_LIMIT):
                     chunk = missing[i:i + LINK_BATCH_LIMIT]
@@ -212,8 +216,10 @@ async def create_links(
             specs.append({
                 "link_type": "ethernet",
                 "nodes": [
-                    replica[role_a], ad_a, pt_a,
-                    replica[role_b], ad_b, pt_b,
+                    {"node_id": replica[role_a], "adapter_number": ad_a,
+                     "port_number": pt_a, "label": {"text": f"eth{ad_a}"}},
+                    {"node_id": replica[role_b], "adapter_number": ad_b,
+                     "port_number": pt_b, "label": {"text": f"eth{ad_b}"}},
                 ],
             })
     attempted = len(specs)
