@@ -55,12 +55,13 @@ wr                              ; 写 /etc/frr/frr.conf，容器重启自动加�
 ## 4. ws console 推送姿势（node_console → websocat）
 
 ```bash
-{ sleep 2; printf 'vtysh\r\n'; sleep 1.2; printf 'end\r\n'; sleep 0.4;
+{ sleep 2; printf '\x03'; sleep 0.5;   # 中断可能残留的 ping（ws 断开不会终止容器侧 ping）
+  printf 'vtysh\r\n'; sleep 1.2; printf 'end\r\n'; sleep 0.4;
   cmds=(...上述命令...); for c in "${cmds[@]}"; do printf '%s\r\n' "$c"; sleep 0.3; done;
   sleep 3~4; } | timeout 30 websocat -t --no-close '<ws_url from node_console>'
 ```
 
-- **流开头固定 `vtysh` + `end` 兜底**：容器会话可能停在 bash（裸 `exit` 会把 vtysh 挤到 bash）或任意模式（见过 `(config-if)#`）。已在 vtysh 时这俩命令只是无害报错。
+- **流开头固定 `\x03` + `vtysh` + `end` 兜底**：容器会话可能停在 bash（裸 `exit` 会把 vtysh 挤到 bash）或任意模式（见过 `(config-if)#`）；`\x03` 用于中断**上次会话残留的 ping**（websocat 断开不会终止容器侧 ping，实测 6 分钟后 icmp_seq 已 350+ 还在跑）。空闲时 \x03 只是重打提示符，无害。
 - 结尾**不要发裸 `exit`**（会退出 vtysh 掉 bash，污染下一个会话）。
 - 命令尾必须 `\r\n`；token 10 分钟过期，每节点配置前重新 `node_console`。
 - **websocat 的 timeout 必须贴输入时长**（`--no-close` 下 stdin EOF 后 websocat 不退出，墙钟时间 = timeout 值）：46~50 条配置（~20s 输入）用 `timeout 30`；2~3 条验证命令（~6s 输入）用 `timeout 15`；带 ping 的验证（~15s 输入）用 `timeout 20`。
@@ -82,6 +83,8 @@ ping 2026::6
 ```
 
 - vtysh 的 `ping` **没有 source 参数**（只有 `ping WORD|ip|ipv6`，按地址族自动选），带 source 会报 Unknown command。
+- vtysh 的 `ping` **不会自动停止**：默认无限回包，必须手动终止。验证流里 ping 之后补发 `printf '\x03'`（Ctrl+C）才回到提示符；否则会话卡在 ping、websocat 挂满 timeout、后续命令被缓冲错乱。
+- **ws 断开杀不掉运行中的 ping**：ping 在容器侧 vtysh 会话里继续跑（实测断开 6 分钟后 icmp_seq 350+，`\x03` 一停立回提示符并打印统计）。所以每次会话开头都要发 `\x03` 兜底清残留。
 - 配置完成后建议 ping 前等 ~20s 收敛（dead timer 40s）。
 
 ## 6. 坑速查
@@ -93,6 +96,7 @@ ping 2026::6
 | `% OSPF is not running in instance mode` | `router ospf 1` | 用 `router ospf` |
 | `router ospf6` 块 config 为空 | 用了 `router-id` | 用 `ospf6 router-id` |
 | `ping ... source ...` Unknown | vtysh ping 无 source | `ping <addr>` / `ping 2026::6` |
+| ping 一直回包不停、会话回不到提示符 | vtysh ping 默认不自动停止 | ping 后补发 `\x03`（Ctrl+C）终止 |
 | websocat 等满 timeout 才结束 | `--no-close` 特性 | timeout 贴输入时长 |
 | Bash 工具级 timeout 给了 60s | 没贴输入时长 | 工具 timeout = 命令 timeout + 前导 sleep（配置 ~32s、验证 ~20s） |
 | node_file_* 对 docker 404 | 仅 qemu/iou 支持 | 只能走 ws console |
