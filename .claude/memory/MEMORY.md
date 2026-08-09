@@ -10,3 +10,5 @@
 - [mark-test IPv6 部署](mark-test-ipv6.md) — 2026::/48+OSPFv3，规则 10.X.Y.Z→2026:X:Y::Z；跨平台语法（传统/AF/ospf6）；DAD DUP sticky、重置地址丢 OSPF、区域汇总用 /32 三大坑
 - [100-node-iou OSPF](100node-iou-ospf.md) — 6×IOU L3 单区 OSPFv2/v3(AF)；编址 Lo=10.1.0.N/2026::N、链路=10.1.AB.0/30/2026:AB::；transit 改 point-to-point；device_show_run 同设备别发 2 条
 - [1000-FRR-Node OSPF](1000-frr-node.md) — FRR 10.3 full-mesh 双栈 OSPFv2/v3；6 节点原型→复制 1002 节点/2505 链路；无 instance 模式、ospf6 router-id、裸 exit 掉 bash、ws timeout 贴输入时长、link_create 不带 label 会变 "4/0"（fix_link_labels.py 批修）
+- [建节点用默认名](node-naming-use-default.md) — node_create 不自定义 name，沿用模板 default_name_format，除非用户明确要求
+- [100-FRR-Node](100-frr-node.md) — 17 组六边形 full-mesh=102节点/255链路(FRRDockerLite 模板)；link_reset 修 uBridge 不通、ping 矩阵比邻居表计数可靠、.venv 跑 replicate_mesh

@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 137244e6-b2f8-4f75-a22a-01b8e8dd41e5
-  modified: 2026-08-08T14:34:15.993Z
+  modified: 2026-08-09T17:14:03.040Z
 ---
 
 1000-FRR-Node（project_id `86c88244-cd8e-47aa-8ef3-eac3e439c61b`）：6 台 FRR docker（模板 `2fae8873-b194-4f1f-a306-c8a469e099a8`，镜像 FRRouting 10.3，console 5000~5005），**15 链路 full-mesh**（每节点 5 邻居，eth0~eth4），单 Area0，OSPFv2 + OSPFv3 双栈。2026-08-08 验证：双协议各 30 邻接全 FULL，非直连 loopback 双栈 ping 0 丢失。
@@ -25,7 +25,7 @@ metadata:
 
 **node_file 工具对 docker 节点不可用**（404，仅 qemu/iou 节点目录支持）；配 FRR 只能走 ws console。
 
-**复制到 1000 节点（2026-08-08）**：6 节点原型用 `replicate_mesh.py`（`mcp-manual-test/`，IOU 版同脚本，docker 同样适用——**docker 无 IOU application_id 512 上限**）复制成 **167 组 × 6 = 1002 节点 / 2505 链路**（FRRDockerLite-1~1002，全 stopped）。布局：组内正六边形（r=150，顶点 P1~P6 对应 R1~R6）、组间 16:9 矩形（步长 800×600，帧 ~12800×7200）；`--grid 16x11 --spacing 200 --origin=-6400,-3600`。**配置随复制携带**：`node_duplicate` 复制 `project-files/docker/{id}/etc/frr/frr.conf`（bind 卷），副本启动即自动加载 OSPF 配置，无需重推——但所有副本带源节点 IP/router-id，**同时启动多组会 IP 冲突**，要独立成网需换编址段。
+**复制到 1000 节点（2026-08-08）**：6 节点原型用 `replicate_mesh.py`（`mcp-manual-test/`，IOU 版同脚本，docker 同样适用——**docker 无 IOU application_id 512 上限**）复制成 **167 组 × 6 = 1002 节点 / 2505 链路**（FRRDockerLite-1~1002，全 stopped）。布局：组内正六边形（r=150，顶点 P1~P6 对应 R1~R6）、组间 16:9 矩形（步长 800×600，帧 ~12800×7200）；`--grid 16x11 --spacing 200 --origin=-6400,-3600`。**配置随复制携带**：`node_duplicate` 复制 `project-files/docker/{id}/etc/frr/frr.conf`（bind 卷），副本启动即自动加载 OSPF 配置，无需重推。所有副本带源节点 IP/router-id，但**各组之间无跨组链路、物理隔离（独立 L2 广播域），相同 IP 不冲突**——每组启动后独立运行 OSPF、互不干扰，不需要换编址。（曾误判"同时启动多组会 IP 冲突"，错——IP 冲突只在同一广播域内发生。）
 
 **link label 坑（重要）**：`link_create` 的 `nodes` 若不带 `label` 字段，GNS3 自动生成 `"{adapter}/{port}"`（如 "4/0"）而非端口名 "eth4"——GUI 手画的链路才有 "ethX"。**斜杠前数字就是 eth 编号**（"4/0"=eth4），接线功能正确（adapter_number 才绑定容器 eth），仅显示难看。解法：建链时 `nodes` 用对象格式带 `{"label":{"text": f"eth{adapter_number}"}}`（紧凑 `[id,ad,pt]` 格式无法带 label）；已建的用 `link_update` 传 `kwargs={"nodes":[{...,label}]}` 批量修。批量修脚本 `mcp-manual-test/fix_link_labels.py`（限并发 20，跳过已正确，2489 条 0 失败）。`replicate_mesh.py` 的 create_links/repair_links 已改为带 label。
 
