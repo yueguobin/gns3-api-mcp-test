@@ -11,4 +11,8 @@
 - [100-node-iou OSPF](100node-iou-ospf.md) — 6×IOU L3 单区 OSPFv2/v3(AF)；编址 Lo=10.1.0.N/2026::N、链路=10.1.AB.0/30/2026:AB::；transit 改 point-to-point；device_show_run 同设备别发 2 条
 - [1000-FRR-Node OSPF](1000-frr-node.md) — FRR 10.3 full-mesh 双栈 OSPFv2/v3；6 节点原型→复制 1002 节点/2505 链路；无 instance 模式、ospf6 router-id、裸 exit 掉 bash、ws timeout 贴输入时长、link_create 不带 label 会变 "4/0"（fix_link_labels.py 批修）
 - [建节点用默认名](node-naming-use-default.md) — node_create 不自定义 name，沿用模板 default_name_format，除非用户明确要求
-- [100-FRR-Node](100-frr-node.md) — 17 组六边形 full-mesh=102节点/255链路(FRRDockerLite 模板)；link_reset 修 uBridge 不通、ping 矩阵比邻居表计数可靠、.venv 跑 replicate_mesh
+- [100-FRR-Node](100-frr-node.md) — 17 组六边形 full-mesh=102节点/255链路(FRRDockerLite 模板)；ping 矩阵比邻居表计数可靠、.venv 跑 replicate_mesh
+- [uBridge 正常](ubridge-normal.md) — 链路不通别归咎 uBridge、别 link_reset/重启节点瞎修
+- [Cisco telnet 不走 WS](cisco-telnet-no-ws.md) — cisco_ios_telnet 节点只用 device_config_send/device_show_run，websocat 仅限 docker 节点
+- [XRd 节点 device 工具可用](xrd-node-device-config.md) — docker XRd 走 device_config_send/show_run；commit 手动、config 后补 end（两工具共享会话）；分页已修（08-17 更新）；server 更新会丢 XRd 配置、中途更新要 /mcp 重连
+- [BGP 双 RR 双栈](bgp-rr-dual-stack.md) — R3/R7+RR-1/RR-2@Switch1 AS64501，IOU3/4 eBGP AS64502；ipv6 AF 走 v6 会话（::FFFF: 坑）、FRR eBGP 要 no ebgp-requires-policy、IOL 不认 ipv6 router ospf、旧 startup-config 接口可能 shut
