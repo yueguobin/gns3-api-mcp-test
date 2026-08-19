@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: reference
   originSessionId: db3a48e2-aa5a-4d4f-ac25-22095fda3027
-  modified: 2026-08-15T15:49:24.914Z
+  modified: 2026-08-18T14:46:01.325Z
 ---
 
 ## GNS3 MCP 两个坏掉的工具 + 规避（2026-06-16 验证）
@@ -25,6 +25,9 @@ metadata:
 
 ### 2026-08-15 更新：`device_show_run` 拓扑反查曾坏、已修复
 曾报 `Failed to get device info from topology`（节点明明有 `device_type:cisco_ios_telnet` 标签且 started）。用户修复 gns3server 后恢复正常，`device_show_run`/`device_config_send` 均可用（Comprehensive Regression Testing 项目 7200 组验证）。另一坑：**一次 `device_config_send` 带 3 台设备时，第 1 台成功、后 2 台报 `netmiko_send_config (failed)`（无细节）**——疑似并发 telnet 会话冲突；拆成单台逐个发即可。
+
+### device_show_run 禁 ping 之外的命令（2026-08-18）
+`traceroute` 被 MCP 服务端 forbidden pattern 拦截（用户确认：执行时间长、可能占死 console，故意禁的）。路径验证替代法：看 FIB 下一跳（`show ip route X` 的 `via ... from ...`，from≠via 即 route-server/RR 指纹）或 `ping`（允许）。另：IOS 15.2(4)M 的 ping **不支持 `ttl` 内联关键字**（交互式扩展 ping 才有，netmiko 走不了），TTL 探测法在此镜像不可用。
 
 ### netmiko 处理不了交互确认（2026-08-15）
 带 y/n 确认的 exec 命令（如 `clear ipv6 ospf process` → "Reset OSPF process? [no]:"）用 `device_config_send` 的 `do` 前缀发会报 `netmiko_send_config (failed)` 且可能把控制台留在半截提示上。**需要重启进程才生效的配置（router-id 等）：直接 `node_stop` + `node_start` 重启节点**（前提：已 `write memory`），重载后配置生效，比折腾交互命令可靠。

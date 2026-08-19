@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: feedback
   originSessionId: 7729fc62-68f9-4e13-868d-c39a05902088
-  modified: 2026-08-15T16:19:21.294Z
+  modified: 2026-08-19T14:50:03.761Z
 ---
 
 通过 MCP `node_console` 拿 ws URL 后，用 websocat 连接配置 Linux/Docker 节点（Cisco 设备直接用 `device_config_send`，不走 ws）。
@@ -13,11 +13,12 @@ metadata:
 **Why:** device_config_send 是 netmiko（只认 Cisco IOS），对 Alpine/BusyBox 等 Docker 容器无效，必须走 ws console 发 shell 命令。
 
 **How to apply:**
-- ws URL 的 host **直接用 `node_console` 返回值**（当前环境为 `10.5.1.1`），不要改成 `127.0.0.1`（曾误记 127.0.0.1 更稳，用户纠正：应以 node_console 返回的 URL 为准）。
+- ws URL 的 host **直接用 `node_console` 返回值，一字不改**。不要改成 `127.0.0.1`，也不要"统一改成熟悉的 host"——**节点重启后通告 host 可能变化**（2026-08-19：FRRDocker-5 重启后从 10.5.1.1 变成 192.168.1.140，我坚持改写回 10.5.1.1 → WS 能 101 建连但 console 零数据，表象完全像 console 僵死，白白 stop→start 两轮还误诊容器死）。正确姿势：每次连接前现取 node_console、URL 逐字节照抄、stderr 别丢（认证类报错只在 stderr/首帧里可见）。
 - 连接模板（关键是 `--no-close` + 保持 stdin 打开，否则 heredoc EOF 立刻关连接、读不到输出）：
   `{ printf '\r\n<cmd>\r\n'; sleep 6; } | timeout 9 websocat -t --no-close "ws://127.0.0.1:3080/v3/projects/<pid>/nodes/<nid>/console/ws?token=<jwt>"`
 - 命令行尾必须 `\r\n`。token 10 分钟过期，重连要重取（`node_console` 每次发新 token）。
 - **controller token revoked 坑**：GNS3 server 重启后 admin 旧 token 全部 revoke，新 token 也立即失效（报 `Token has been revoked for 'admin'`）；需让 server 侧重置鉴权（修复后 token payload `ver` 会变，如 0→1）。
+- **长 token 抄写污染会自我传播（2026-08-18 深刻教训）**：曾把 token header `alg` 抄成 `amg`（G→W 一个字符），此后多次"重新原样复制"都锚定在**自己早先的错误命令**上而非 node_console 的新返回，连续污染 4 个新鲜 token，全程误判为"服务端签发 bug/双路径轮换"——实际后端只有一个 `jwt.encode` 且 `alg` 写死（用户代码 grep 证实），最后靠 transcript 比对（SERVER 返回行全是 alg、我的命令行全是 AMG）才定位。**WS 报 `Could not validate credentials` 时：第一步先 grep transcript 逐字节比对"工具返回行 vs 我的命令行"的 token，排除自己的抄写问题，再谈服务端**。服务端事实：3080 握手不验签（垃圾 token 也 101、缺 token 才 403），验签在上游，所以抄坏的 token 101 之后报错属正常行为。
 - Alpine/BusyBox 不支持 `ip -br addr`（那是 iproute2），用 `ip addr`；配 IP `ip addr add 10.4.12.1/30 dev eth1`。
 - GNS3 docker 容器 eth0/1/2 严格对应 adapter 0/1/2（MAC 末字节 :00/:01/:02 可佐证）。
 - 持久化写 `/etc/network/interfaces`（GNS3 docker 的 `/gns3/init.sh` 启动时执行 `ip link set ethN up` + `ifup -a -f` 自动生效；且 `/etc/network` 是 bind mount 持久卷 `GNS3_VOLUMES=/etc/network`，容器销毁重建也保留文件）。
