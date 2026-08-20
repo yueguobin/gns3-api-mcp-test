@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 26925966-39a5-4879-91ca-d19104aeba3a
-  modified: 2026-08-19T16:49:09.180Z
+  modified: 2026-08-20T15:32:57.100Z
 ---
 
 GNS3 docker 模板 `ghcr.io/nokia/srlinux:latest`（实测 v26.7.1-554，模板 usage 说明有错处）。console_type=docker_exec，直接落 sr_cli（`A:root@srlinux#`）。与 FRR/XRd 完全不同的模型，坑极多（2026-08-19 十组联调实证）：
@@ -21,6 +21,9 @@ GNS3 docker 模板 `ghcr.io/nokia/srlinux:latest`（实测 v26.7.1-554，模板 
 - **BGP**：顶层 `import-policy [ 名 ]`/`export-policy [ 名 ]` 是**列表语法**；**v6 多地址源选择坑**：上联口同时有 2026::N 和 2026:254:254::N 时源选错 → 对端 RS 拒收（v6 会话 connect/active 徘环但 ping 通）→ `neighbor <v6> transport local-address 2026:254:254::N` 显式钉住。
 - **routing-policy**：`/routing-policy prefix-set X { prefix 0.0.0.0/0 mask-length-range exact { } }`；match 里写法是 **`prefix prefix-set <名>`**（prefix 是引导词）+ `protocol static|bgp`；`action`/`default-action` 里 `policy-result accept|reject`。
 - **OSPF export-policy 对 static 实测无效**（Type-5 恒 0，全收策略也 0；`table-connections` 的 destination-protocol 值域只有 bgp|gribi|isis|local|static，根本不含 ospf）→ 组内默认路由改用**内部节点静态 ECMP**（next-hop-groups 双边界 nexthop）替代 default-information originate。
-- ping 是 Linux 风格：`ping network-instance default <ip> -c 3 [-I 源] [-t ttl]`；持久化=**`save startup`**（写 /etc/opt/srlinux/config.json；模板 usage 写的 `save config` 不存在）。改配置 `enter candidate private` + `commit now`（原子，错一处全不生效）。
+- ping 是 Linux 风格：`ping network-instance default <ip> -c 3 [-I 源] [-t ttl]`。改配置 `enter candidate private` + 提交（原子，错一处全不生效）。
+- **持久化正解 = `commit save`**（2026-08-20 用户指正）：提交+落盘 /etc/opt/srlinux/config.json 一步完成。**`save startup` 不可靠**——回显同样说写了 config.json，但 gns3server 重启后节点回到出厂、running 全空（08-20 实证四台全丢，重推改用 commit save 后恢复）；模板 usage 写的 `save config` 则根本不存在。**commit save 后经 MCP node_stop→node_start 实测配置自动加载、OSPF 回满**（08-20 SRLinux-1 验证）。
+- **sr_cli 没有 `;` 多语句分隔符**：`{ peer-group X; transport {...} }` 会把分号并进值（leafref 变 `"ebgp-core;"`），commit 报 Leafref does not exist 才暴露。多叶子必须分行或分开的单行命令。
+- **gns3server 重启后 console 行为变化**：每次 ws attach 新起 sr_cli（不再是持久 exec 流）；断连时未提交的 private candidate 可能还挂着一会儿，重连先看提示符（`+* candidate` = 脏 candidate 仍在，可直接续修提交）。
 
-参见 [[bgp-rr-dual-stack]]（⑨组部署）、[[gns3-ws-console-usage]]。
+参见 [[bgp-rr-dual-stack]]（⑨组部署）、[[gns3-ws-console-usage]]。完整配置模板与推送流程已沉淀为项目 skill：`.claude/skills/srlinux-ospf-bgp/SKILL.md`（含坑速查表）。
