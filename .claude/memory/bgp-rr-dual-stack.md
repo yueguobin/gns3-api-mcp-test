@@ -5,7 +5,7 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 26925966-39a5-4879-91ca-d19104aeba3a
-  modified: 2026-08-19T16:49:19.616Z
+  modified: 2026-08-21T17:09:03.840Z
 ---
 
 Comprehensive Regression Testing 项目（20f40515-35b0-4a11-b15f-9552ba6e4715）在 ① 组 OSPF 之上加的 BGP 层（2026-08-16 部署）：
@@ -28,7 +28,7 @@ Comprehensive Regression Testing 项目（20f40515-35b0-4a11-b15f-9552ba6e4715�
 
 **④组补全（2026-08-19）**：用户要求 OSPF 域汇总入 BGP——IOSv3/4 双起源 `network 10.3.0.0/16` + `network 2026:3::/32`（各配 Null0 锚定；**v6 汇总是 /32 不是 /48**，/48 只盖第三 hextet=0，盖不住 2026:3:AB:: 链路）。随后踩坑：**跨组 ping 组内非边界节点（IOSv1/2 的 Lo0）0%——回程路由缺失**（ping 源=254 段，内部节点不跑 BGP 又无 254/外组路由，回包被丢）；Lo100 之前能通纯因目标就在 254 段。解法：边界 IOSv3/4 在 v4+v6 两个 OSPF 进程 `default-information originate always`（always 免真实默认路由），内部节点双边界 ECMP 默认。
 
-**①②组同款对称处理（2026-08-19）**：①=10.1.0.0/16+2026:1::/32（R3/R7；v6 空间 2026:1:N::N Lo0 + 2026:1:AB::/64 链路，传统 ipv6 router ospf 1）、②=10.2.0.0/16+2026:2::/32（IOU3/4；ospfv3 AF 下注默认）。三组边界同构：Null0 锚定 + BGP network 汇总 + OSPF 默认注入，全互通达成。发现：①R3 早已 redistribute static（含 10.4.0.0/16 via .44 的静态——用户约定每组=10.X.0.0/16，还存在个 10.4 组）；②IOU3/4 有陈旧 network 语句（area 2）且 **254 段早已在②的 OSPF area 0**（e0/3 匹配 `10.254.254.0/24 area 0`），接口级 area 0 优先所以没出事。坑：**6 台同时推送后立刻 ping 可能瞬态 0%**（BGP network+OSPF 默认+ECMP/CEF/ARP 收敛窗口），换源排查半天实为等待即可——先等 30s 再验。
+**①②组同款对称处理（2026-08-19）**：①=10.1.0.0/16+2026:1::/32（R3/R7；v6 空间 2026:1:N::N Lo0 + 2026:1:AB::/64 链路，传统 ipv6 router ospf 1）、②=10.2.0.0/16+2026:2::/32（IOU3/4；ospfv3 AF 下注默认）。三组边界同构：Null0 锚定 + BGP network 汇总 + OSPF 默认注入，全互通达成。发现：①R3 早已 redistribute static（含 10.4.0.0/16 via .44 的静态——用户约定每组=10.X.0.0/16，还存在个 10.4 组）；②IOU3/4 有陈旧 network 语句（area 2）且 **254 段早已在②的 OSPF area 0**（e0/3 匹配 `10.254.254.0/24 area 0`），接口级 area 0 优先所以没出事。坑：**6 台同时推送后立刻 ping 可能瞬态 0%**（BGP network+OSPF 默认+ECMP/CEF/ARP 收敛窗口），换源排查半天实为等待即可——先等 30s 再验。**②组 254 段 OSPF 泄漏终局清理（2026-08-22）**：IOU3/IOU4 的 `network 10.254.254.0 0.0.0.255 area 0` 一直把骨干拉进②组 OSPF（两边界在 254 段互建邻接、hello/LSA 上骨干），用户在 GUI 用 global-ospf 标记发现；两台 `no network` + write memory 后骨干抓包 OSPF 归零、组内 3×FULL/跨组 ping 不受影响。教训：**当年只清了受害方（10.4 staged），没清源头（②的 network 语句）**；判断协议流量泄漏直接 link_capture + tshark `-Y 'ip.proto==89'` 数源地址最快。
 
 **⑧组（2026-08-19）**：XRdControlPlane-1~4（docker XR 24.4.1，**重建后新模板 1e5df5c0 自带 `netmiko_device_type: cisco_xr_telnet`，节点无需再打 device_type tag**），ethernet 六链路 full-mesh（Gi0/0/0/0-2）+ 上联 Gi0/0/0/22→Switch1-e12/e13（边界 XRd-3/XRd-4）。10.8.AB.0/24 主机位=节点号、2026:8:AB::N/64、Lo0=10.8.N.N+2026:8:N::N；上联 **.88/.89（.77/.78 规律顺延推断）**+2026::88/89 侧平面+2026:254:254::88/89（BGP 用）。AS 64508 三件套同构（Null0 锚定=router static AF、network、ospf/ospfv3 各 default-information originate always）。**XR BGP 三坑**：① eBGP 默认零路由收发（同 FRR ebgp-requires-policy）——必须 route-policy PASS（pass/end-policy）挂邻居 AF in/out（iBGP 也挂，保证非空存续）；② `no bgp enforce-first-as` 是 IOS 语法，XR 是 **`bgp enforce-first-as disable`**；③ **在 AF 下敲 `neighbor X` 会跳出 AF 进全局 neighbor 上下文**，route-policy 挂不进且后续命令全体错位——正统结构 `neighbor X / address-family … / route-policy …`（nbr-af 三层），邻居的 AF 激活=在 neighbor 下进其 AF。OSPF XR 语法：`router ospf 1 / area 0 / interface X / network point-to-point`，ospfv3 要 `router ospfv3 1 / address-family ipv6 unicast / area 0`。**gns3server 纯重启 XRd commit 配置实测存续**（/xr-storage 生效；8-17 丢配置那次是更新重建容器）。验证：OSPF v2/v3 4×3 FULL、双边界 BGP 6/6×2、R3 FIB `via .88, from .101` tag 64508 AS Hops 1、跨组 ping 4 向 5/5（XRd Linux 内核转发仅 3-7ms）。另：**node_links 显示层怪癖**——R-4↔Switch1-e9 链路 link_list 有、两侧 node_links 均不显示、link_create 报 409；判断链路死活要以 BGP/转发实测为准。
 
