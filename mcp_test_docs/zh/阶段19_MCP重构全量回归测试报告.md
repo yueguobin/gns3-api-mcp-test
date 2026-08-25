@@ -106,7 +106,7 @@
 | link_create 单个/批量 | 以太 ×3 + 串口 ×1 | ✓ | 批量紧凑格式可用；**端口标签正确（"2/0"/"0/0"，历史 "4/0" 标签 bug 未复现）** |
 | link_list | fields 过滤 ×2 | ⚠️ | **fields 不支持 `markers`**，报 Unknown fields（看 marker 用 link_get/node_links，P2-3） |
 | link_get | 单链路 ×3 | ✓ | 含 markers/suspend/filters |
-| link_update | filter + suspend | ✓ | docker 链路 delay[50,5]+packet_loss[1] 生效；serial suspend 开关正常；filters 清空正常。**IOU↔IOU 链路现在也接受 delay filter（旧版 409，行为反转，数据面效果未验，P2-4）** |
+| link_update | filter + suspend | ✓ | docker 链路 delay[50,5]+packet_loss[1] 生效；serial suspend 开关正常；filters 清空正常。**IOU↔IOU 链路现在也接受 delay filter（旧版 409，行为反转，数据面效果未验，P2-4）** → **阶段 23 复验：IOU↔IOU 接受 delay 成立；VPCS↔ethsw 链路 delay 数据面实测通过（RTT≈2×delay ± jitter）** |
 | link_available_filters | docker 链路 | ✓ | 5 种 filter 及参数范围完整 |
 | link_reset | 单链路重置 | ✓ | filter 配置保留（符合描述） |
 | link_capture_start / stop | 以太链路抓包 | ✓ | capturing 状态与文件路径正确 |
@@ -164,13 +164,14 @@
 | P1-2 | 高 | 自定义 symbol 链路整体坏：上传不注册、dimensions 回默认值、raw 下载内容错、删除被误判 built-in 拒绝 | symbol_upload / symbol_get / symbol_dimensions / symbol_delete |
 | P2-1 | 低 | image_install 单镜像可批量生成多个（含同名重复）模板 | image_install |
 | P2-2 | 低 | node_file_get 字节计数差 1（行尾换行）→ **08-25 阶段 22 修复复测通过（keepends 字节保真；CRLF 分支未实测）** | node_file_get |
-| P2-3 | 低 | link_list fields 不支持 markers | link_list |
-| P2-4 | 待确认 | IOU↔IOU 链路 filter 由 409 变为接受（API 层；数据面未验证） | link_update |
+| P2-3 | 低 | link_list fields 不支持 markers → **08-25 阶段 23 复验成立**（报错附 available_fields 清单，未修） | link_list |
+| P2-4 | 待确认 | IOU↔IOU 链路 filter 由 409 变为接受（API 层；数据面未验证）→ **08-25 阶段 23 复验成立；另 VPCS↔ethsw 链路 delay 数据面实测通过（RTT≈2×delay），IOU↔IOU 数据面仍未验** | link_update |
 | P2-5 | 低 | symbol_list 输出超限（663 条/98k 字符） | symbol_list |
 | P1-3（已修复） | — | 空项目 lock 后 `locked` 恒 true、`unlock` 返回成功但状态不翻转（vacuous-True 根因）；08-25 当日修复（controller/project.py `locked` 空集守卫）并四象限复测通过。附语义定论：lock=逐项置位节点/绘图、locked=聚合查询+删除保护（update 放行、delete 409）。closed 态 lock 裸 403 文案转**已知遗留**（维持原样） | project_lock / project_locked / project_unlock |
 | N-1（阶段 21 发现，已修复） | 中 | `node_suspend`/`node_suspend_all` 对 VPCS、IOU 返回成功但状态不翻转（仅 docker 翻转 suspended）；无 `node_resume` 工具，恢复用 `node_start`。挂起语义只对 docker/qemu 系可靠 → **08-25 阶段 22 修复复测通过（VPCS/IOU 诚实 405、suspend_all best-effort）** | node_suspend / node_suspend_all |
 | N-2（阶段 21 发现，已修复） | 低 | ① 批量接口返回顺序与提交顺序不一致（并行执行）；② 批量 node_delete 逐项 status 用 "deleted" 而非 "success"，口径不一致 → **08-25 阶段 22 修复复测通过（批量按提交序返回、delete 统一 "success"）** | node_create / node_delete / link_create |
 | N-3（阶段 22 发现） | 低 | `node_suspend_all` 对已 suspended 的 docker 节点再调用，compute 层 409 "already paused" 上抛中断整个调用（非幂等；best-effort 只容忍 405 未覆盖 409） | node_suspend_all |
+| L-1（阶段 23 发现，已修复） | 低 | 同模板节点批量创建时默认名/console 分配与提交顺序解耦（并行创建竞态）：首个提交的 IOU 实际获得名 R-2；返回顺序本身仍=提交顺序（N-2① 修复仅作用于响应收集层）→ **08-25 阶段 24 修复复测通过（创建按提交序串行化，名字/console 确定化）** | node_create 批量 |
 
 ## 统计
 
