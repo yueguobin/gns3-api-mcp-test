@@ -37,6 +37,8 @@
 
 ## 3. Template（5）
 
+> **08-25 阶段 25 专项复测**：5 工具全部通过（较本轮扩展：按 name 的 get/delete 路径、create/update 错误路径、e2e 节点验证——模板建→改→建节点→started 闭环）；新观察项 T-1（get 按 name 与按 id 的报错风格不一致）。基线现为 22 个模板。
+
 | 工具 | 测试场景 | 结果 | 备注 |
 |---|---|---|---|
 | template_list | 全量 + fields 裁剪 ×3 | ✓ | 24 个模板，fields 过滤生效 |
@@ -122,6 +124,8 @@
 
 ## 11. Drawing（5）
 
+> **08-25 阶段 27 专项复测**：5 工具全部通过（较本轮扩展：假 UUID 三类错误路径、组合/部分更新、中文 SVG 逐字符保真、四种形状覆盖）；新观察项 D-1（create 对非 SVG 内容不报错，静默替换为空 `<svg></svg>`）。条目级 locked 语义定论：删除 409 / 编辑放行，与 project_lock 同一开关。
+
 | 工具 | 测试场景 | 结果 | 备注 |
 |---|---|---|---|
 | drawing_create / list / get | 矩形（实心填充） | ✓ | |
@@ -129,6 +133,8 @@
 | drawing_delete | 删除 | ✓ | 锁定状态删除被正确 409 拒绝，解锁后成功 |
 
 ## 12. Snapshot（4）
+
+> **08-25 阶段 26 专项复测**：4 工具全部通过（较本轮扩展：前置违规/重名/假 UUID 错误路径 + 恢复回滚四维核对——节点含 node_id 稳定性/链路/绘图/节点文件）；新观察项 S-1（create 前置校验文案主语 "project" 与实义"节点须停止"偏差）。语义定论：恢复后自动重开且节点全 stopped、node_id 跨恢复稳定、restore 不清空快照列表。
 
 | 工具 | 测试场景 | 结果 | 备注 |
 |---|---|---|---|
@@ -180,4 +186,4 @@
 - 与 08-23 基线对比：marker 体系、capture 下载、批量逐项 status、默认命名、device 工具等结论全部复验成立；IOL filter 结论反转（P2-4）
 - 遗留待手工处理：
   1. 僵尸项目条目 `mcp-regress-loadtest`（`0d8f1a5e-0000-4000-8000-000000000001`，重启服务器按子目录 `0d8f1a5e-…/` 重扫后再删）
-  2. 误建模板 `MikroTik RB1100AHx4 Dude Edition`（`7d06e72d-5c4b-4e3a-bb4c-ef3defb4d142`）、`MikroTik RB450G`（`bc581894-fba9-4b34-b37e-83b3c6e1151a`）
+  2. 误建模板 `MikroTik RB1100AHx4 Dude Edition`（`7d06e72d-5c4b-4e3a-bb4c-ef3defb4d142`）、`MikroTik RB450G`（`bc581894-fba9-4b34-b37e-83b3c6e1151a`）→ **已消解：08-25 阶段 25 核对，两模板已不在列表中**
