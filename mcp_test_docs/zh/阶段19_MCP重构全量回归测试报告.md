@@ -29,9 +29,9 @@
 | project_duplicate | 复制项目 | ✓ | 副本 closed、属性继承 |
 | project_open | 开项目 ×3 | ✓ | |
 | project_close | 关项目 ×2 | ✓ | |
-| project_lock | 锁项目 | ⚠️ | closed 状态下调用返回原始 403 文本（"Unknown Status…Original 403"），信息生硬；opened 后正常 |
-| project_locked | 查锁定 | ✓ | 返回 locked:true |
-| project_unlock | 解锁 | ✓ | |
+| project_lock | 锁项目 | ⚠️ | closed 状态下调用返回原始 403 文本（"Unknown Status…Original 403"）——**已知遗留，维持原样（用户确认 08-25）**；opened 后正常，修复后四象限复测通过 |
+| project_locked | 查锁定 | ✓ | 修复后四象限复测：lock→true / unlock→false（需项目含 ≥1 节点或绘图）；空项目恒 false（守卫，符合设计，无事可锁） |
+| project_unlock | 解锁 | ✓ | 修复后复测通过。曾发现空项目 vacuous-True 缺陷（unlock 返回成功但 locked 不翻转），当日修复（controller/project.py `locked` 空集守卫） |
 | project_load | 从文件加载 | ⚠️ | 正常路径 ✓（限允许目录）；/tmp 路径 403 ✓；缺 computes 字段报清晰 pydantic 409 ✓；**但见 P0-1：加载 projects 根目录裸 .gns3 会产生 path 指向根目录的条目** |
 | project_delete | 删项目 | ✗ | 常规路径 ✓（副本、临时项目均干净删除）；**但 path=projects 根的条目触发 rmtree 整个 projects 目录（P0-1）** |
 
@@ -167,6 +167,7 @@
 | P2-3 | 低 | link_list fields 不支持 markers | link_list |
 | P2-4 | 待确认 | IOU↔IOU 链路 filter 由 409 变为接受（API 层；数据面未验证） | link_update |
 | P2-5 | 低 | symbol_list 输出超限（663 条/98k 字符） | symbol_list |
+| P1-3（已修复） | — | 空项目 lock 后 `locked` 恒 true、`unlock` 返回成功但状态不翻转（vacuous-True 根因）；08-25 当日修复（controller/project.py `locked` 空集守卫）并四象限复测通过。附语义定论：lock=逐项置位节点/绘图、locked=聚合查询+删除保护（update 放行、delete 409）。closed 态 lock 裸 403 文案转**已知遗留**（维持原样） | project_lock / project_locked / project_unlock |
 
 ## 统计
 
