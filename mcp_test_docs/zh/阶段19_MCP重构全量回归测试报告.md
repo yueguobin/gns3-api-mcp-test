@@ -49,6 +49,8 @@
 
 ## 4. Appliance（3）
 
+> **08-25 阶段 28 专项复测**：list/get 通过；**P1-1 复现未修**（成功路径响应仍非 JSON，但模板实际已建且完整可用——本轮 FRR 模板含 appliance_metadata 溯源实锤）。新观察 A-1：缺镜像时前置 409 拒绝且无副作用（阶段 19 未记录的正向校验）。**→ 08-26 阶段 29 修复复测：P1-1 已修**（返回 message+template 摘要 JSON）。
+
 | 工具 | 测试场景 | 结果 | 备注 |
 |---|---|---|---|
 | appliance_list | fields 过滤 ×2 | ✓ | 225 个，含 appliance_id |
@@ -64,6 +66,8 @@
 | compute_images | — | ⏭️ | 无注册远程 compute，无可测对象 |
 
 ## 6. Image（5）
+
+> **08-25 阶段 28 专项复测**：list/get 通过；**image_delete 真实删除路径首次覆盖**（用户批准删 2 个 crdownload 残留，删后复核）；**P2-1 复现且加重**（一次建 13 个模板，含与存量同名的 CSR1000v 重复——image_install 无同名校验，与 appliance_install 的 409 行为不一致）；新观察 I-1：返回仅 "completed" 不含新建清单，副作用范围只能靠 template_list diff。image_prune 维持跳过。**→ 08-26 阶段 29 修复复测：同名重复已修**（模板名+镜像引用双层去重）、I-1 已修（created/skipped 结构化返回）；单镜像多不同名模板（chr-7.8.img→10 个 MikroTik 型号）行为保留。
 
 | 工具 | 测试场景 | 结果 | 备注 |
 |---|---|---|---|
