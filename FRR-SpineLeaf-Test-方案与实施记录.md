@@ -159,11 +159,67 @@ B>* 192.168.4.0/24 [20/0] via 10.1.1.0, eth0, weight 1
 5. console 主进程即 vtysh（FRR 镜像），bootstrap 里的 `vtysh` 命令报 Unknown command 属预期无害。
 6. Ubuntu Docker Guest 配置是 live-only，重启即丢（无 ifup）；如需持久化可写 /etc/rc.local 或 rc-local 兜底（未实施）。
 
-## 8. 与 DC-Test（XRd）对照
+## 8. EVPN/VXLAN 叠加层（09-13 建成，全验证通过）
+
+在 routed underlay 之上叠加 BGP EVPN + VXLAN（RFC 8365 单会话双 AF：现有 eBGP 会话同时承载 ipv4 unicast + l2vpn evpn）。
+
+### 8.1 设计
+
+- **VNI 100**（L2 拉伸，172.20.100.0/24）覆盖 4 台 Leaf；每 Leaf：`br100`（vlan_filtering 1）桥接 `eth3`（主机腿）+ `vxlan100`（固定 id 100，local-tunnelip= 本机 lo，dstport 4789，nolearning）
+- BUM 走 EVPN type-3 头端复制；MAC 走 type-2 BGP 通告（无 flooding 学习）
+- U1-U4 用空闲 eth1 接入：172.20.100.11-14/24
+- 新增 4 链路：L_N eth3 ↔ U_N eth1
+
+### 8.2 Leaf 配方（内核 + vtysh，L_N 例）
+
+```bash
+# 内核对象（console 先 exit 掉 vtysh 进 bash；live-only，重启需重推）
+ip link add br100 type bridge vlan_filtering 1
+ip link add vxlan100 type vxlan id 100 local 10.0.0.1N dstport 4789 nolearning
+ip link set vxlan100 master br100
+ip link set eth3 master br100
+bridge vlan add dev vxlan100 vid 100
+bridge vlan add dev eth3 vid 100 pvid untagged
+bridge vlan del dev eth3 vid 1
+ip link set br100 up && ip link set vxlan100 up && ip link set eth3 up
+```
+
+```text
+conf t
+router bgp 6500N
+ address-family l2vpn evpn
+  neighbor 10.1.N.0 activate
+  neighbor 10.2.N.0 activate
+  advertise-all-vni          ← 关键！见 8.4
+ exit-address-family
+end
+wr
+```
+
+Spine 只需 af l2vpn evpn 下逐邻居 `activate`（无需任何 next-hop 配置，见 8.4 第 2 条）。
+
+### 8.3 验证结果（全过）
+
+| 检查项 | 结果 |
+|---|---|
+| show evpn vni（4 台 Leaf） | VNI 100 L2，Remote VTEPs 阶梯递增 1/2/3（type-3 互播成功） |
+| U1→U2/U3/U4（172.20.100.x） | 全部 3/3、0% loss（ttl=64，L2 over VXLAN） |
+| show bgp l2vpn evpn（L1） | 每 VTEP 独立 RD（10.0.0.11-14:2）；type-2/3 齐全；**type-2 next-hop= 源 VTEP lo**，AS path `65000 65002`（经 Spine 转售），RT 6500N:100 |
+| show evpn mac vni 100（L1） | 本地 MAC（eth3）+ 3 条远端 MAC → VTEP 10.0.0.12/13/14（BGP 学习） |
+
+### 8.4 排障实录（半天踩坑，按时间线）
+
+1. **`show evpn vni` 空表（最大坑，消耗最久）**：zebra 完全认识 vxlan 接口（`show interface vxlan100` 显示 VxLAN Id/VTEP IP/Master 全对），但 VNI 表恒空。逐层排查：vlan-unaware→vlan-aware、`tunnel_info`、SVI 子接口、重建 vxlan 触发重评估、`debug zebra vxlan`（零输出）——全部无效。最终读 FRR 源码定位：`zevpn_build_hash_table()` 开头 `zvrf = zebra_vrf_get_evpn(); if (zvrf == NULL) return;`，而 bgpd 侧 `bgp_zebra.c`：`if (bgp->advertise_all_vni) bgp_zebra_advertise_all_vni(bgp, 1);`——**FRR 10.3 的 `advertise-all-vni` 不是默认开**，不配它 bgpd 永不向 zebra 注册 EVPN，VNI 表永远空。一条命令解决。
+2. **eBGP EVPN 的 next-hop**：10.3 里 `neighbor X next-hop-unchanged`/`nexthop-unchanged`/`bgp evpn next-hop-unchanged` 全部 Unknown command——因为 **EVPN AF 发 eBGP 邻居默认就不改 next-hop**（RFC 8365 语义，无开关）。实测 type-2 跨两级 eBGP 后 next-hop 仍是源 VTEP lo。别去配不存在的命令。
+3. **`tunnel_info` 只属于 external 模式**：`bridge vlan add dev vxlanX vid V tunnel_info id VNI` 对固定 id 的 vxlan 报 `RTNETLINK Invalid argument`（新 iproute2；旧版静默接受但无意义）。固定 id + 普通 `vid` 成员即可。
+4. **官方镜像 quay.io/frrouting/frr 在 GNS3 里不好使**（A/B 测试用）：console 接 PID 1 = watchfrr，**`\x03` 会直接杀掉整个 FRR 栈**；须 template `start_command=/bin/bash` + `sed bgpd=yes /etc/frr/daemons` + `frrinit.sh start` 手工拉起；vtysh 每条命令都刷 `frr.conf processing failure: 11` 噪音。**结论：FRR on GNS3 用 gns3/frr（FRRDocker 模板）即可**，EVPN 能力齐全。测试模板 FRR-Official-10.7 已保留（T1 节点已删）。
+5. FRR doc 的 SVI（vlan 子接口）只有 IRB/ARP 抑制才需要，纯 L2 VNI 不用（实测 sv100 删不删无影响）。
+
+## 9. 与 DC-Test（XRd）对照
 
 | 项 | DC-Test (XRd) | 本项目 (FRR) |
 |---|---|---|
 | 拓扑/AS/编址 | 2S+4L 同款设计 | 完全复用 |
-| EVPN/VXLAN | 不可行（XRd 无 NVE），routed tenant | 同为 routed（FRR docker 可玩 VXLAN，留作后续） |
+| EVPN/VXLAN | 不可行（XRd 无 NVE），routed tenant | **已建成全验证**（L2VNI 拉伸，type-2/3 + 头端复制） |
 | 会话建立 | 手动 commit、分页坑多 | 一次推完、即时生效 |
 | 断网收敛 | hold-timer ≈168s（eBGP 默认 180s） | 未演练（后续可 suspend S1 测） |
