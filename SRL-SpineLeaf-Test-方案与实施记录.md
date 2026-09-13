@@ -224,11 +224,28 @@ commit save
 
 注：static anchor（BLACKHOLE）是首轮按组⑨经验配的，实测被同前缀 system host 路由压制（active false）、真正被 BGP 导出的是 host 路由（坑 7），保留无害。
 
-### 4.3 Ubuntu 主机（H_N，console=telnet，live-only 不持久化）
+### 4.3 Ubuntu 主机（H_N，console=telnet，**/etc/network/interfaces 持久化**）
+
+镜像开机由 `/gns3/init.sh` 用 **busybox ifup -a -f** 应用 `/etc/network/interfaces`（文件跨容器 stop/start 保留，H1 重启实测：IP 自动回、ping 恢复 0% 丢包）。注意 **busybox 不认 CIDR**，address/netmask 必须分列；运行时 shell 里**没有** ifup/ifdown 命令（载波靠 ip 命令或重启拉起）：
 
 ```bash
-ip link set eth0 up                 # 不 up 则 leaf 侧 e1-3 无载波 → EVPN 全挂（坑 1）
+# 首次（拉起载波 → type-3 立即生成；不 up 则 leaf 侧 e1-3 无载波 → EVPN 全挂，坑 1）
+ip link set eth0 up
 ip addr add 10.100.100.1N/24 dev eth0
+# 持久化（base64 写文件，telnet console 多行最稳）
+echo <base64> | base64 -d > /etc/network/interfaces
+```
+
+文件内容（H1 例，其余换地址）：
+
+```text
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 10.100.100.11
+    netmask 255.255.255.0
 ```
 
 ## 5. 实施步骤（全 MCP + ws console）
@@ -240,7 +257,7 @@ ip addr add 10.100.100.1N/24 dev eth0
      | timeout 70 websocat -t --no-close '<node_console 的 ws_url 逐字节复制，token 单次有效>'
    ```
    判据：输出含 `All changes have been committed`。**websocat 输出禁接管道**——先 `> 文件`，再 `sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g'` 清 ANSI 后 grep
-3. **host 配 IP**（拉起载波，EVPN type-3 随即生成）
+3. **host 配 IP**（`ip` 命令拉起载波，EVPN type-3 随即生成；随后写 `/etc/network/interfaces` 持久化，见 §4.3）
 4. **验证**（§6），排障时日志用 `node_file_list/get` 直读 GNS3 extra_volumes 暴露的 `var/log/srlinux/file/messages`（无需进容器）
 
 ## 6. 验证结果（2026-09-13，全过）
@@ -255,7 +272,7 @@ ip addr add 10.100.100.1N/24 dev eth0
 | RR 转售 | NH 保持 10.0.0.1X 不改写、AS 追加 65000、Cluster-List 空 |
 | MAC 表 | 本地 1 learnt（ethernet-1/3.0）+ 远端 3 evpn（`vtep:10.0.0.12/13/14 vni:100`） |
 | 主机 E2E | H1→H2/H3/H4 与 H2→H4 均 3/3、0% 丢包（rtt ≈0.8-3ms） |
-| 持久化 | 6 台路由器全部 `commit save`（含排障修复项） |
+| 持久化 | 6 台路由器全部 `commit save`（含排障修复项）；4 台 host 写 `/etc/network/interfaces`（H1 经 node stop→start 重启实测：文件保留、init.sh 自动 ifup、ping 恢复 0% 丢包） |
 
 ### 6.1 关键输出摘录（原文）
 
@@ -343,4 +360,4 @@ Total Learnt Macs : 1  Total Evpn Macs : 3
 2. 推 §4.1/§4.2 模板（已含全部修复项：ebgp-default-policy false、multipath、RD/RT、纯 prefix export）→ `commit save`
 3. host 推 §4.3（eth0 up + IP）
 4. 验证 5 条：`show /network-instance default protocols bgp neighbor`（8 会话双 AF）→ `info from state /network-instance default route-table ipv4-unicast statistics`（ecmp=3）→ `show ... routes evpn route-type 3 summary`（3 条远端）→ `show /network-instance VNI-100 bridge-table mac-table all`（evpn MAC 带 vtep）→ H1 `ping 10.100.100.12/13/14`
-5. 全员 `commit save`；host 配置 live-only（容器重启重推）
+5. 全员 `commit save`；host 写 `/etc/network/interfaces`（address/netmask 分列，busybox 不认 CIDR；运行时无 ifup，boot 时 /gns3/init.sh 应用）——首次仍需 `ip link set eth0 up` 拉载波
