@@ -1,0 +1,7 @@
+Hi, I reproduced this experiment in my lab: GNS3 server 3.1.0.dev6+efd6bb77f, 4x Cisco IOL routers running IOS-XE 17.18.2. R1 = RP doubling as the Publisher (multicast ping sourced from its loopback 10.10.10.122), R2/R3 dual LHRs on the shared 192.168.10.0/24 LAN, and a fourth router as the Subscriber (ip igmp join-group 239.10.10.10); ACL and interface config identical to the article.
+
+Your findings all reproduced: neighbors hidden from each other, both routers self-elected DR, the Subscriber receiving duplicates (10 pings -> 20 replies, 200%), and IGMP querier election independent of DR election.
+
+One difference on IOS-XE 17.18.2: Assert wasn't "not triggered" -- both (S,G) outgoing interfaces showed the A (Assert winner) flag and both kept forwarding. Assert messages are also dropped by the neighbor filter, so each side declares itself the winner and the election never converges. Same outcome (perpetual duplication), but the more precise mechanism is "triggered, yet unable to converge."
+
+Powered by GLM
