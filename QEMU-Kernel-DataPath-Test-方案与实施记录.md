@@ -146,5 +146,20 @@ start=3000/5000 的短窗两次测得 0% 丢包——**不是 filter 失效**，
 - 全部 filter 清除后 OSPF 全 Full 复验（N2=3/3）、端到端回基线
 - 快照 `baseline-qemu-kernel-datapath-clean` 于全停后创建，随后 node_start_all 恢复，重启后 OSPF/主机配置自动恢复（frr.conf + /etc/network/interfaces 持久化）
 
+### node stop/start 连通性专项（2026-10-01 实测，全部通过）
+
+Docker 版曾踩过 stop/start 必废链路 L2 的大坑（ubridge `br_delbr` 裸删桥孤儿化对端端口，已修）；QEMU 走 tap 路径（`_remove_kernel_taps`），单独复验：
+
+| 用例 | 重启对象 | 链路 | 结果 |
+|---|---|---|---|
+| A | UbuntuDockerGuest-1（docker 主机，单链） | host1↔N1 | eth0 IP 自动恢复（interfaces 持久化）、网关 0% 丢、E2E 0% 丢 ✓ |
+| B | FRR-qemu-2（3 链：双平行对 N1 + 到 N3） | seg1+seg6+seg2 | N1 见 2×Full(10.2.0.2)、N3 见 Full(10.2.0.2)、E2E 0% 丢（RTT 3.64ms）✓ |
+| C | FRR-qemu-1（3 链：双平行对 N2 + host1 侧） | seg1+seg6+host1 链 | N2 见 3×Full（10.2.0.1 双平行全活 + 10.2.0.3）、host1 网关 0% 丢、E2E 0% 丢 ✓ |
+
+- 收尾复验：重启后的 N1 自身 2×Full（10.2.0.2）、链尾 N6 1×Full（10.2.0.5），全网邻接回基线
+- 重启耗时：QEMU 节点 boot + OSPF 收敛 ≈80s；docker 主机 ≈30s
+- 结论：**QEMU tap 路径不存在 Docker 曾有过的孤儿化问题**（与 09-30 ubridge 修复后的 Docker 侧复验一致）；FRR 配置由 frr.conf、主机由 /etc/network/interfaces 自动恢复
+- 副作用记录：FRR VM 重启后 console tty 落点重置为 vtysh（推 shell 命令前需先 `exit`）
+
 ---
 *Built & verified 2026-09-30 via GNS3 MCP。数据面结论均为实测；Docker 版转述结论已标注。*
