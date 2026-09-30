@@ -5,7 +5,7 @@
 在 GNS3 项目 **DC-Test**（`c8f3efe2-1c1d-42cf-aad3-9460fcb5ccb4`）用 6 台 Cisco XRd Control Plane（IOS XR 24.4.1，docker 模板，4GB/台）搭建 2-Spine + 4-Leaf Clos Fabric。
 
 - **Underlay（完成）**：eBGP（RFC 7938 BGP-only 风格），Spine 共用 AS 65000，Leaf 各持 AS 65001–65004，/31 点对点编址，全网 lo0 互通，ping 矩阵 100%。
-- **Overlay（验证门判定：不可行，降级）**：原计划 eBGP EVPN + VXLAN。实测定 **XRd control-plane 镜像没有 NVE/VXLAN 子系统**（`show nve` 命令不存在、`interface nve1` 无法创建、EVPN VNI 恒 unresolved、BGP EVPN 表恒空），遂降级为 **routed tenant**：租户网段直接进 BGP，两台 VPCS 主机经 Fabric 跨网段 E2E 互通（实测通，TTL=61 三跳）。
+- **Overlay（验证门判定：不可行，降级）**：原计划 eBGP EVPN + VXLAN。实测定 **XRd control-plane 镜像没有 NVE/VXLAN 子系统**（`show nve` 命令不存在、`interface nve1` 无法创建、EVPN VNI 恒 unresolved、BGP EVPN 表恒空），遂降级为 **routed tenant**：租户网段直接进 BGP，两台主机经 Fabric 跨网段 E2E 互通（实测通，TTL=61 三跳）。
 - **故障演练（完成）**：挂起 Spine-1 全部 4 条下联 → 收敛 ≈168s（BGP hold timer 主导）→ 业务切 Spine-2 恢复 → 链路恢复后双平面回归。
 
 ## 拓扑与编址
@@ -20,7 +20,7 @@ Leaf-1   Leaf-2   Leaf-3    Leaf-4     (各自 Gi0/0/0/0 上联 Spine-1、Gi0/0/
 AS65001  AS65002  AS65003   AS65004
                   Gi0/0/0/2  Gi0/0/0/2 ← L3 主机口
                   172.16.10.1/24  172.16.20.1/24
-                  Host-1(172.16.10.11)  Host-2(172.16.20.12)  (VPCS)
+                  Host-1(172.16.10.11)  Host-2(172.16.20.12)  (Ubuntu Docker Guest，09-12 由 VPCS 替换)
 ```
 
 - 链路点对点：`10.<S>.<L>.0/31`（S=Spine 编号，L=Leaf 编号；spine 端 .0，leaf 端 .1）
@@ -57,9 +57,18 @@ AS65001  AS65002  AS65003   AS65004
 - 8 条 eBGP（ipv4 unicast）全 Established；每 Leaf 5 前缀（2 spine lo0 + 3 远端 lo0 + 对端租户 /24）
 - l2vpn evpn AF 仍挂在各 eBGP 会话上（AF 协商成功、空表——保留作为验证门证据）
 - Host-1(172.16.10.11) ↔ Host-2(172.16.20.12) 跨 Fabric 互通（Leaf-3↔Spine↔Leaf-4）
-- 演练收敛/恢复数据见上；XRd 配置已 commit 持久化（Leaf-3 重启实证），VPCS 已 save
+- 演练收敛/恢复数据见上；XRd 配置已 commit 持久化（Leaf-3 重启实证），主机持久化见下节增补
 - 未做 snapshot（需全停节点，不值得为一个快照拆 Fabric）
 - Spine 上遗留的 EVPN/EVI 试验配置已从 Leaf-3 清除；Leaf-1/2 保持纯 underlay
+
+## 增补（2026-09-12 晚）：主机 VPCS → Ubuntu Docker Guest
+
+应用户要求把两台终端从 VPCS 换成 Ubuntu Docker Guest（同名同位，仍挂 Leaf-3/4 的 Gi0/0/0/2，IP 不变 172.16.10.11 / 172.16.20.12）：
+
+- 流程：停删 VPCS 及其链路 → 建 2 台 Ubuntu 节点 → 重挂链路 → 启动 → ws console 配置
+- **主机持久化（纠正旧结论）**：把地址写进 `/etc/network/interfaces`（busybox 语法，address/netmask 分列、gateway 独立行）后，**容器启动会自动加载该文件**——Host-1 写好文件后 node_stop→node_start 实证：eth0 IP 与默认路由自动恢复，无需重推 `ip` 命令（08-31 MSTP 项目记的"仅存档、重启必须重推"是误判，ifup/ifdown 只是命令行工具缺失）。运行态 `ip addr add`/`ip route add` 仍用于不重启热生效。
+- ws console 写文件新坑：**长行会被 tty 按列宽折断**，整段 base64 一行 `echo` 进去必碎（报 `base64: invalid option`）；可靠姿势是 **base64 串 fold 成 ≤80 字符/段，逐段 `echo ... >> /tmp/x.b64` 再 `base64 -d`**。
+- 验证：Host-1/2 各自 ping 网关 2/2；Host-2→Host-1 E2E 3/3（ttl=61）；Host-1 重启后 E2E 3/3 复测通过。
 
 ## 后续方向
 

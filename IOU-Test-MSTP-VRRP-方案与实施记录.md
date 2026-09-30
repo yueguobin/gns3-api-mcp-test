@@ -145,7 +145,7 @@ ip route 0.0.0.0 0.0.0.0 Null0
 ```
 
 ### Ubuntu 客户端（Ubuntu Docker Guest 模板）
-`/etc/network/interfaces`（busybox 不认 CIDR，address/netmask 分列）+ 运行态 `ip addr add` / `ip route add`。
+`/etc/network/interfaces`（busybox 不认 CIDR，address/netmask 分列）——**启动时自动加载，持久化有效**（09-12 DC-Test 重启实证）；运行态 `ip addr add` / `ip route add` 仅用于不重启热生效。
 
 ## 验证与演练结果（2026-08-31 实测）
 
@@ -165,7 +165,7 @@ VRRP 快速切换机理：master 的 SVI 被 shut 时发 priority-0 通告，bac
 ## 坑与备忘
 
 1. **首切黑洞异常（未复现）**：演练 2 首跑出现 ~11s 黑洞——SW1 已 Master（syslog 证实 +0.61s 接管）但 PC2 全丢。复跑（双 ping 流+traceroute 探针）干净。期间观察到 SW1 VLAN20 MAC 表中 vMAC `0000.5e00.0114` 为 DYNAMIC 学自 Et0/1（新 master 未本地化 vMAC 表项），复跑时同表项存在却无影响。定性为 ioul2 镜像 VRRP 首次切换的 gARP/CAM 竞态，非确定性问题，留意即可。
-2. **Ubuntu Docker Guest 无 ifup/ifdown**：重启后 IP 必须用 `ip addr add`/`ip route add` 重推，`/etc/network/interfaces` 仅存档。
+2. **Ubuntu Docker Guest 无 ifup/ifdown 命令**，但**启动流程会自动加载 `/etc/network/interfaces`**（08-31 当时误判为"仅存档、重启必须重推"；09-12 在 DC-Test 以 busybox 分列语法写文件 + node 重启实证：IP/默认路由自动恢复）。运行态改 IP 才用 `ip addr add`/`ip route add`。
 3. **docker 节点 console 禁止发 `exit`**：console 挂的主进程 bash，exit 即杀容器会话（本次踩过，node_stop→node_start 恢复）。会话结尾用 echo 标记行，靠 timeout 断开。
 4. **MCP 工具链延迟 10–20s/跳**：故障演练的时间轴不能靠「工具返回即生效」排程，客户端侧一律用 base64 写入的自计时脚本（nohup 后台双 ping+定时 traceroute），事件对齐靠设备 syslog 时间戳。
 5. 核心 trunk（SW1↔SW2）是本设计命门：缺了它，被阻 instance 侧的 VRRP backup 收不到 hello 会双主。
