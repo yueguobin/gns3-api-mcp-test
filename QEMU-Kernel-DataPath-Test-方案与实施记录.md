@@ -61,7 +61,7 @@ host1(10.2.100.1) ── FRR-qemu-1 ══╪══ FRR-qemu-2 ── FRR-qemu-3
 - N1 路由表：10.2.0.2..6/32 全部双下一跳（via 10.2.1.2 + via 10.2.6.2）——平行链 ECMP 成立
 - host1→host2：5 发 5 收 0% 丢，ttl=58，traceroute 7 跳（.254→10.2.6.2→10.2.2.2→10.2.3.2→10.2.4.2→10.2.5.2→host2），ECMP 哈希走 seg6
 
-## 6. Filter 实测（问题 2，全部 host1→host2 数据面验证）
+## 6. Filter 实测（问题 2，数据面验证；15–18 项为晚间补测）
 
 换算规律与 Docker 版一致：**filter 双向各生效一次**（RTT 丢包=1−(1−L)²，RTT delay=2×单向，rate 按帧长=IP+14B 序列化）。
 
@@ -81,8 +81,31 @@ host1(10.2.100.1) ── FRR-qemu-1 ══╪══ FRR-qemu-2 ── FRR-qemu-3
 | 12 | bpf（seg2） | [icmp] | 100%（10/10 全丢） | ✓ |
 | 13 | corrupt（seg2） | [50] | 84%（100 样本） | 坏包校验和不过→按丢包计，理论 75%，netem 位翻转语义内 ✓ |
 | 14 | quota（seg2） | [20000,100] | seq0–13 通、14 起全死 | 20000B÷1442B/帧≈13.9 帧硬断崖 ✓ |
+| 15 | reorder（seg2，配合 delay=[20]） | [50,0,10] | 到达序乱序（11 先于 9/10 等 42 处偏移），300/300 收齐 0 丢 | 对照 delay-only 300/300 有序；reorder 生效 ✓ |
+| 16 | limit（seg2，delay=[50,0] 基准） | limit=[10] vs [1000] | 10 路并发突发 600 包（~1000pps）：limit10 丢 73–80%；limit1000 丢 0%；单流在队 ~6/方向不触阈 | 队列深度尾丢语义 ✓ |
+| 17 | seed（host1↔N1 静默链） | packet_loss=[20]+seed（换值重下发多轮） | 同 seed 两轮 85/85 丢包序列逐位相同（md5 一致）；异 seed 图案不同 | seed 包级可复现 ✓；同值重设不重置 RNG（见下） |
+| 18 | window_drop 四参（host1↔N1 静默链） | [15000,3000,100,8000] | 4 完整窗：周期 8.000s、窗长 2.91–3.02s、窗内 100% 丢、窗外零丢 | 周期窗精确 ✓ |
 
-未单独复测：**reorder（需 delay 配合）、seed、limit、window_drop 四参**——与已测 filter 共享同一 netem/eBPF 内核路径，Docker 版已逐项验证（转述《Packet-Filter-Test-方案与实施记录》）。
+15–18 项于 2026-09-30 晚补测完成（此前仅 Docker 版逐项验证过；本 QEMU 实验场复测确认跨平台一致）。
+
+### seed 可复现性与"同值重设不重置 RNG"（补测发现）
+
+在 host1↔N1 静默链（方法论见下）做的判定实验（全部实测）：
+
+| 轮次 | 操作 | 结果 |
+|---|---|---|
+| X | seed=12345 首用 | 85/200 丢，md5 `18297743…` |
+| W | seed=99999 | 77/200 丢，图案不同（与 X 差 55 行） |
+| Z | 换回 12345（前值 99999，**非**同值） | **与 X 逐位相同**（md5 一致、diff=0） |
+| A | seed=42 首用 | 120/300 丢 |
+| B | 同值 {20,42} 重下发 | 与 A 差 72 行（RNG 未重置） |
+| Y | 同值 {20,12345} 重下发 | 与 Z 差 41 行（RNG 未重置） |
+
+结论：seed 能实现包级可复现（同 seed 同图案、异 seed 异图案，X/W/Z 三连坐实）；但**同值重设 filter 是 no-op，RNG 状态不重置**（B/Y 接着上一轮 RNG 继续跑）。这是 controller 层"同值 filters PUT 短路"的**已知行为**（修复仅对含 `window_drop` 的集合开例外：`new_filters != self.filters or "window_drop" in new_filters`），非新 bug——非 window_drop 的同值重发不会重建 qdisc，故 RNG 不重置。复现实验配方：先换一个 seed 值（或清空 filters）再下发目标值。
+
+### 静默链路方法论（干净 filter 实验）
+
+seg2 上有 N2/N3 每 10s 的 OSPF hello 会消耗 RNG 抽签，seed 复现实验必须换无干扰链路：**host1↔N1**（对端是主机、本无 OSPF 邻接），临时给 N1 eth2 设 `passive-interface`（show 显示 "No Hellos"，网段仍正常通告、不影响路由），测完已还原并 write memory。编排用"自计时脚本"（host1 侧 `sleep 12`，期间从 MCP 下发 filter）保证 apply→首包窗口零流量。
 
 ### window_drop 编排延迟坑（重要）
 
@@ -113,6 +136,10 @@ start=3000/5000 的短窗两次测得 0% 丢包——**不是 filter 失效**，
 4. FRR VM console 落 vtysh 而 docker FRR 落 shell——推送脚本要区分模式（shell 下先 `vtysh`，vtysh 下配完 `exit` 回 shell 收尾）
 5. window_drop 短窗 vs 编排延迟（见 §6）
 6. qemu 节点启动 ~45–60s（比 docker 慢），批量 start 后等一分钟再配
+7. **同值重设 filter 是 no-op，seed RNG 不重置**——复现实验必须换值再换回（见 §6 补测发现）
+8. **`ping -O` 在发送间隔 < RTT 时对每包都打 "no answer yet"**（在途未回），不能当丢包计数；仅间隔 ≥ RTT 时该行才等价真丢包。丢包序列提取应配合"received 集合的补集"或 stats 行
+9. 该镜像 ping 实际发包间隔下限 ~10ms（`-i 0.002` 不生效：50 包耗 462ms）；压队列要并发多路 ping（10 路 ~1000pps）
+10. 补测在 host1↔N1 链路做过 seed/window4 实验，N1 的 `passive-interface eth2` 为临时设置、已还原（write memory）
 
 ## 9. 复验与快照
 
