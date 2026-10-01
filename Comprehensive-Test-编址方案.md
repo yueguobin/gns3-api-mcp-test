@@ -1,7 +1,7 @@
 # Comprehensive Test 编址方案（2026-08-27）
 
-项目：Comprehensive Test（6a21a432-e9cb-436a-9ea7-d5797eda1bb7），39 节点 / 74 链路。
-九组业务组 + 双 route-server 骨干。本文档为唯一编址依据，配置推送以此为准。
+项目：Comprehensive Test（6a21a432-e9cb-436a-9ea7-d5797eda1bb7），43 节点 / 82 链路。
+十组业务组 + 双 route-server 骨干。本文档为唯一编址依据，配置推送以此为准。
 
 ## 全局规则
 
@@ -39,6 +39,8 @@
 | G8 SRL-1 e1-34 | Sw1-e8 | .18 | ::18 |
 | G8 SRL-2 e1-34 | Sw2-e8 | .28 | ::28 |
 | G9 FRR-5 eth7 / eth6 | Sw1-e7 / Sw2-e0 | .19 / .29 | ::19 / ::29 |
+| G10 IOL-XE-3 Eth0/3 | Sw1-e10 | .110 | ::110 |
+| G10 IOL-XE-4 Eth0/3 | Sw2-e11 | .210 | ::210 |
 | BGP-RS-1 eth0 / eth2 | Sw1-e19 / Sw2-e9 | .101 / .103 | ::101 / ::103 |
 | BGP-RS-2 eth0 / eth2 | Sw1-e9 / Sw2-e10 | .102 / .104 | ::102 / ::104 |
 | RS-1↔RS-2 eth1 直连 | — | 10.99.0.0/30（.1/.2） | 2026:99::/64（::1/::2） |
@@ -110,6 +112,14 @@ G9 FRR-5 主用 .19，.29 可加第二组会话。RS 间 eth1 段预留。
 - Ubu-1: eth0=10.9.11.2/24 + 2026:9:11::2，gw 10.9.11.1 / 2026:9:11::1
 - Ubu-2: eth0=10.9.12.2/24 + 2026:9:12::2，gw 10.9.12.1 / 2026:9:12::1
 
+### G10 CiscoIOL-XE-1–4｜IOL-XE docker（IOS-XE 17.18.2）｜**AS6510（用户指定，脱离 6450G 系列）**
+链路 12/13/14/23/24/34 → 10.10.AB.0/24。Lo0：10.10.1.1 … 10.10.4.4。接口名 IOL 风格 `Ethernet0/x`（非 Gi）。
+- XE-1: Eth0/0→XE-2, Eth0/1→XE-3, Eth0/2→XE-4
+- XE-2: Eth0/0→XE-1, Eth0/1→XE-3, Eth0/2→XE-4
+- XE-3: Eth0/0→XE-1, Eth0/1→XE-2, Eth0/2→XE-4, **Eth0/3→Sw1(.110)**
+- XE-4: Eth0/0→XE-1, Eth0/1→XE-2, Eth0/2→XE-3, **Eth0/3→Sw2(.210)**
+- OSPF：`router ospf 1`（v2 network 语句）+ `router ospfv3 1` AF ipv6 + 接口级 `ospfv3 1 ipv6 area 0`（同 G4 IOU17 语法）；iBGP v4 走骨干直连 .110↔.210、v6 走 lo0 + `update-source Loopback0`
+
 ## 路由实施记录（2026-08-28 完成并全通）
 
 - 每组 OSPFv2+v3 area 0（IOS 传统 v6 / IOU17 ospfv3 AF / XRd router ospf(fv3) / FRR ospf+ospf6 / SRL 双 instance），边界三件套：Null0(blackhole) 锚定 + BGP network 汇总 + default-information originate always（SRL 内部用静态 ECMP 默认）
@@ -125,3 +135,12 @@ G9 FRR-5 主用 .19，.29 可加第二组会话。RS 间 eth1 段预留。
 - **边界对 v6 iBGP 缺 update-source（全 IOS 家族通病）**：G1–G5 五组边界对（R3/R4、R7/R8、R-3/R-4、R-7/R-8、IOSv-3/4）v6 iBGP 邻居建在对方 lo0 上但无 `update-source lo0`，从未 Established（Idle/never；v4 iBGP 因邻居恰配在直连段地址而幸免）；G7 XRd X1/X2 同病（卡 Active，需 `update-source Loopback0` + commit）。已全部修复 + `do write memory`/`commit`，修复后 Est/9pfx，且跨后续服务器重启持久化验证通过。G6（FRR update-source lo）、G8（SRL 6/6 UP）本就正常。
 - 教训：RS 视角"36 会话全 Est"覆盖不到组内边界对 iBGP，巡检须从边界设备侧逐组看 summary。
 - 同日 gns3server 3.1.0a5 更新：ws console token 改为短串 `gns3t_*` 且**单次有效**（一连接一取），websocat 输出不可接管道（会吞输出）；服务器重启后项目可能停 closed 需先 project_open。
+
+## G10 扩展记录（2026-10-02，一次建成全通）
+
+- 4×CiscoIOL-XE（docker 模板 6492832f，`iol-xe/iol-xe:17-18-02`，画布右上 (1095~1320, -555/-330)）+8 链路；模板自带 `netmiko_device_type: cisco_ios_telnet`，device 工具零配置直通，开机自带 hostname/`no ip domain lookup` 基础配置
+- **IOL-XE 链路全部 kernel_datapath=false**（unix-socket NIO 非 TAP，含挂交换机的上联链），filter 仅 5 种 relay 基础款——全项目 kernel 链变为 61/82
+- 坑 1：**FRR 侧新增 v6 邻居必须在 `address-family ipv6 unicast` 下显式 `activate`**——只配 remote-as+route-server-client 时会话不建立（XE 侧 Idle/never，RS v6 summary 里根本不出现），补 activate 后即起
+- 坑 2：BGP-RS-1/2 节点原本无 device_type tag（模板 65e41e50 不带 netmiko 字段），已补 `device_type:cisco_ios_telnet` tag
+- 路由：OSPFv2/v3 4×3 FULL；边界三件套 + iBGP（v4 直连/v6 lo0+update-source）+ eBGP 双 RS（XE-3→.101/.102、XE-4→.103/.104，`no bgp enforce-first-as`）；双 RS 各 40 邻居（v4+v6 各 20）全 Est，G10 四会话 PfxRcd=10（1 自有+9 转售，与老组指纹一致）
+- 验证：XE-1→10.3.1.1 / 2026:8:1::1 / 10.99.99.19 全 5/5；反向 IOSv-1→10.10.1.1+2026:10:1::1、R-1→10.10.2.2+2026:10:4::4 全 5/5；全部 `do write memory`/`write memory` 持久化
