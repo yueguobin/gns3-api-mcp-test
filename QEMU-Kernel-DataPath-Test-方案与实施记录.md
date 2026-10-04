@@ -5,6 +5,7 @@
 > 本文所有数据面结论除明确标注"转述"外，均为实测（证据：各步 console/link API 原始输出）。
 >
 > **⚠️ 现行状态（2026-10-04 起）：项目已原地扩展至 11×FRR-qemu，与 Docker 版逐段同构。§1–§9 为 6 节点建成期原文（历史记录），其拓扑/编址/链路清单已被 §10 取代；现行拓扑、编址、filter 与性能结论一律以 §10 为准。**（原 6 节点快照 `baseline-qemu-kernel-datapath-clean` 仍在快照列表中，可整体回滚到 6 节点态。）
+> **§11 = 性能优化专节：e1000 → virtio-net-pci 的 A/B 实测（吞吐 ×5–10，主项目未改动，载体为复制项目 `Kernel-DataPath-Qemu-FRRqemu-virtio`）。**
 
 ## 1. 背景与问题
 
@@ -368,3 +369,60 @@ host1 ── FRR-qemu-1 ══╪══ FRR-qemu-2 ── 3 ── 4 ── 5 �
 
 ---
 *§10 扩展与验证 2026-10-04 via GNS3 MCP（链路/节点/设备操作全程走 MCP：device_config_send / device_show_run / node_console+websocat / link_update / link_available_filters / snapshot_create）。数据面结论均为本次实测。*
+
+---
+
+# §11 QEMU 转发性能优化：virtio-net 网卡 A/B 实测（2026-10-04）
+
+> 本节为性能优化专节，全部数据为本次实测。测试载体：独立复制项目 `Kernel-DataPath-Qemu-FRRqemu-virtio`（ID `7f9cec92-0dc9-434e-a1ac-d55512fbf569`），**现行 11 节点主项目未改动**。
+
+## 11.1 背景：瓶颈定位（来自 §10 的实测证据）
+
+§10 测得 QEMU 场性能受限的三条证据：每跳 ~0.6ms（Docker 同拓扑 <0.1ms）、**吞吐对 delay 不敏感**（+20ms RTT 单流仅降 40%，Docker 场降 88%）、多流反降。⇒ 瓶颈是 **QEMU 的设备模拟 + VM 边界**（e1000 每包陷入用户态模拟 MMIO），不是 kernel datapath、不是 cwnd/RTT。
+
+**第一杠杆 = 换半虚拟化网卡**。前提确认（实测）：FRR-qemu guest 内核 `5.15.83-0-virt`（Alpine linux-virt）自带 `virtio_net.ko`，`/sys/bus/virtio` 总线已注册。
+
+## 11.2 A/B 做法与结果
+
+复制项目 → 11 台 FRR-qemu 的 `adapter_type` 由 `e1000` 改为 **`virtio-net-pci`**（其余全同：同镜像、1 vCPU/256MB、同拓扑同编址、同测量口径）。改后启动，接口名保持 eth0..eth7、frr.conf 的 IP 自动恢复、22/22 OSPF 收敛正常。
+
+| 指标（host1→host2，11 节点） | e1000（§10 基线） | **virtio-net-pci** | 倍率 |
+|---|---|---|---|
+| ping RTT avg（20 包） | 6.63 ms | 6.03 ms | 0.91× |
+| 每跳延迟 | ~0.6 ms | ~0.55 ms | 基本不变 |
+| iperf3 单流 | 342 Mbps | **1.73 Gbps** | **×5.1** |
+| iperf3 反向单流 | 331 Mbps | 1.70 Gbps | ×5.1 |
+| iperf3 4 流 | 168 Mbps | 1.70 Gbps | ×10.1 |
+| iperf3 8 流 | 206 Mbps | 1.74 Gbps | ×8.4 |
+| iperf3 16 流 | 171 Mbps | 1.75 Gbps | ×10.2 |
+| iperf3 32 流 | 147 Mbps | 1.52 Gbps | ×10.3 |
+| 16 流重传 | 2327 | 6356 | — |
+| **多流形态** | **不升反降（0.5×）** | **持平（≈1.0×）** | 形态改变 |
+
+**结论（实测）**：
+- **吞吐提升 5–10 倍**（单流 ×5.1，多流 ×8–10），且"多流反降"形态消失——**e1000 设备模拟确为吞吐主瓶颈**；
+- **延迟几乎不变**（6.63→6.03ms）——低速率下的每跳 ~0.6ms 由 VM 调度/上下文切换决定，**换网卡解决吞吐、不解决单包时延**；
+- filter 无回归：seg6 挂 `delay [10]` → RTT 27.79ms（+20 精确）；13/13 链仍 `kernel_datapath=true`（filter 装宿主 tap，与 guest 网卡型号无关）；
+- 与三场对照的新位置：**virtio 版 QEMU 11 节点单流 1.73 G ≈ Docker 版 2.22 G 的 78%**（e1000 版只有 15%）。
+
+## 11.3 复现要点与坑（实测）
+
+1. `adapter_type` 必须**停机状态**下改（node properties 的 `properties.adapter_type`），重启即生效——QEMU 命令行变为 `-device virtio-net-pci,...,speed=10000,duplex=full`；
+2. **`project_duplicate` 会重新生成全部 node_id / link_id / MAC**（用旧 id 直接 404），复制后必须重新取 id；
+3. `project_duplicate(reset_mac_addresses=true)` 在当前服务器版本报类型错误（bool 传给了 path 参数）——用默认值即可（MAC 同样会重新生成）；
+4. 复制体首次启动 OSPF 收敛需 ~60–90s，期间 ping 有丢包，勿误判为 virtio 故障；
+5. 复制体的 docker 主机需重新拉起 `iperf3 -s -D`（不随容器持久化）。
+
+## 11.4 尚未验证的后续杠杆（推断，未实测）
+
+| 杠杆 | 预期 | 依据 |
+|---|---|---|
+| vCPU 1→2 / RAM 256→512MB | 改善多流上限（当前 32 流 1.52G 有回退、retr 12852 偏高） | 推断 |
+| guest 内核调优（tx_queue_len↑、backlog↑） | 小幅 | 推断 |
+| **vhost-net** | 再减一次用户态拷贝/唤醒，**可能压低每跳延迟**（0.6ms/跳的主要嫌疑） | 推断；GNS3 3.1 未暴露开关，`options` 注入会与自动生成的 `-netdev` 冲突，待验证 |
+| 吞吐进一步：MTU 9000 | 减少 pps，间接提吞吐 | 推断；需全链统一改 MTU，改变实验语义 |
+
+**快照**：`baseline-qemu-virtio-clean`（`e7c68594-121e-4fa8-a12c-1ead859e57fc`）。复制项目节点/链路 ID 与本项目主文档 §10.3 的清单**一一对应但 UUID 不同**（名称相同）。
+
+---
+*virtio A/B 2026-10-04 via GNS3 MCP（project_duplicate / node_update properties.adapter_type / device 工具 / link_update）。数据均为本次实测。*
