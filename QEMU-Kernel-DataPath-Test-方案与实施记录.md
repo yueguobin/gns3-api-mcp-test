@@ -413,14 +413,36 @@ host1 ── FRR-qemu-1 ══╪══ FRR-qemu-2 ── 3 ── 4 ── 5 �
 4. 复制体首次启动 OSPF 收敛需 ~60–90s，期间 ping 有丢包，勿误判为 virtio 故障；
 5. 复制体的 docker 主机需重新拉起 `iperf3 -s -D`（不随容器持久化）。
 
-## 11.4 尚未验证的后续杠杆（推断，未实测）
+## 11.4 第二杠杆实测：vCPU 1→2 + RAM 256→512MB（无收益，略负）
+
+在同一 virtio 场把 11 台 FRR-qemu 的 `cpus`/`maxcpus` 1→2、`ram` 256→512（其余不动），重启复测。Guest 内实测确认生效：`nproc=2`、`free -m` total **480 MB**。
+
+| 指标（host1→host2） | virtio @1 vCPU/256M | **virtio @2 vCPU/512M** | 变化 |
+|---|---|---|---|
+| ping RTT avg | 6.03 ms | 6.06 ms | 持平 |
+| iperf3 单流 | 1.73 Gbps | **1.49 Gbps** | **−14%** |
+| 4 流 | 1.70 Gbps | 1.52 Gbps | −11% |
+| 8 流 | 1.74 Gbps | 1.56 Gbps | −10% |
+| 16 流 | 1.75 Gbps | 1.55 Gbps | −11% |
+| 32 流 | 1.52 Gbps | 1.48 Gbps | 持平 |
+| 反向单流 | 1.70 Gbps | 1.47 Gbps | −14% |
+| 单流重传 | 196 | **37** | 明显改善 |
+
+复测（同场第二轮）：单流 1.51 G、16 流 1.42 G——与该配置首轮一致（稳定在 1.42–1.56 G 区间）。
+
+**结论（实测）**：**加大 vCPU/内存没有收益、反而一致低 10–15%**（7 个测量点全部同向，非噪声）。原因【推断】：瓶颈本就在**宿主侧包路径**（QEMU 主循环 / tap / uBridge），guest 侧不缺 CPU；单队列 virtio 的收包路径仍只有一条，多出的 vCPU 带来调度/同步开销而吞吐反降（重传数大幅下降说明 guest 端更从容，问题不在 guest）。
+⇒ **QEMU 场的最优已知配置 = virtio-net-pci + 1 vCPU / 256MB**；该结论已实测，vCPU/RAM 杠杆不再列入待验证。
+
+**收尾**：测毕已用 `snapshot_restore` 把 virtio 场回滚到 `baseline-qemu-virtio-clean`（实测验证：`adapter_type` 保持 virtio-net-pci、`cpus/maxcpus` 回 1、`ram` 回 256），现场即最优配置态。
+
+## 11.5 尚未验证的后续杠杆（推断，未实测）
 
 | 杠杆 | 预期 | 依据 |
 |---|---|---|
-| vCPU 1→2 / RAM 256→512MB | 改善多流上限（当前 32 流 1.52G 有回退、retr 12852 偏高） | 推断 |
 | guest 内核调优（tx_queue_len↑、backlog↑） | 小幅 | 推断 |
 | **vhost-net** | 再减一次用户态拷贝/唤醒，**可能压低每跳延迟**（0.6ms/跳的主要嫌疑） | 推断；GNS3 3.1 未暴露开关，`options` 注入会与自动生成的 `-netdev` 冲突，待验证 |
 | 吞吐进一步：MTU 9000 | 减少 pps，间接提吞吐 | 推断；需全链统一改 MTU，改变实验语义 |
+| ~~vCPU / RAM 加大~~ | ~~改善多流上限~~ | **已实测证伪（见 §11.4，反而 −10–15%）** |
 
 **快照**：`baseline-qemu-virtio-clean`（`e7c68594-121e-4fa8-a12c-1ead859e57fc`）。复制项目节点/链路 ID 与本项目主文档 §10.3 的清单**一一对应但 UUID 不同**（名称相同）。
 
