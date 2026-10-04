@@ -164,4 +164,116 @@ host1↔R1 静默链（R1 `passive-interface FastEthernet0/0` 临时设置，测
 
 ---
 
+# §10 扩展至 11 节点（2026-10-04，现行基线）
+
+> 本节所有数据均为 2026-10-04 本次实测（MCP link/node API 原始返回 + 设备 console 输出）。§1–§9 为 6 节点版历史记录，被引用处标【沿用 10-01】。
+
+## 10.1 背景与目的
+
+按需求原地扩展至 **11×c7200**，与 `Kernel-DataPath-Docker-FRRDocker` / `Kernel-DataPath-Qemu-FRRqemu`（均 11 节点）**逐段同构**（QEMU §10 同款改造）：
+
+1. 同节点数/同跳数（11 节点、10 段中转）下四场性能矩阵直接逐格对照；
+2. 11 条中转链的 kernel 判定与 filter 能力普查；
+3. 代表性子集 filter 数据面精测（6 节点版 13 种已全测【沿用 10-01】，本轮"全链普查 + 代表性 6 项"）；
+4. 重编号改造后的持久化（NVRAM）与 stop/start 连通性复验。
+
+## 10.2 改造内容（原地扩展，全程节点 stopped）
+
+| 项 | 内容 |
+|---|---|
+| 新增节点 | 5×c7200（模板 `2dd24853-…`，默认名 R7..R11 一次到位；模板 slot1=**PA-FE-TX**（f0/0+f1/0 两口）对中转/末端正好够用，无需改适配器） |
+| 链路改造 | 删旧尾链 R6 f1/1↔host2（旧 `5e20a252-…`）；新建 6 条：seg7..seg11 + host2 挂 R11 f1/0——**全部建于双端 stopped（deferred wiring），kernel_datapath 一次到位 true** |
+| 重编号 | 既有 6 段 10 个接口 IP 在线重排，**对齐 Docker/QEMU 版 seg 编号**（seg1/seg2=R1↔R2 双平行，seg3..seg11 沿链，近 1 端取 .1） |
+| 串口挪位 | relay 对照串口 10.4.7.0/30 → **10.4.250.0/30**（腾出 seg7..seg11 网段） |
+| 配置 | R7..R11 device_config_send 全量下发 + R1..R6 重编号推送，尾部 `end`+`write memory` 落 NVRAM |
+
+改法（每接口，IOS 配置模式）：`no ip address <旧>` + `ip address <新>`。注意：该 IOS（15.2(4)M11）对带参 `no ip address <旧>` 回显 `Invalid address`，**但后续 `ip address <新>` 直接顶替主地址，show ip interface brief 确认无残留**——回显无害。
+
+## 10.3 拓扑与编址（现行）
+
+```
+ host1 ── R1 ══╪══ R2 ── R3 ── R4 ── R5 ── R6 ── R7 ── R8 ── R9 ── R10 ── R11 ── host2
+(10.4.100.1) f0/0  f1/0+f1/1                              f1/1  f0/0→f1/0        f1/0(.254)  (10.4.200.1)
+                └─ R2 s2/0 ── R3 s2/0（relay 对照 10.4.250.0/30，不进 OSPF）
+```
+
+- Loopback `10.4.0.N/32`；链段 `seg1..seg11 = 10.4.N.0/30`（近 1 端 .1）；主机网 10.4.100/200.0/24（网关 .254）；R7..R10 用 f0/0（左侧 .2）/f1/0（右侧 .1）
+- OSPFv2 单区：接口级 `ip ospf 1 area 0` + transit `ip ospf network point-to-point`（沿用 6 节点版风格）
+- 快照：**`baseline-dynamips-kernel-datapath-11node-clean`（`4f259e7b-a131-46f7-a26c-2e10dc9191c9`）**；6 节点版旧快照保留可回滚
+
+### node_id / link_id 清单（增量）
+
+| 节点 | node_id | console | | 链段 | link_id |
+|---|---|---|---|---|---|
+| R7 | `93e1865e-4a89-41e7-9934-3b214e905a8f` | 5086 | | seg6 R5 f1/1↔R6 f1/0（**主测链**） | `058048f3-d27e-4c2d-81b5-6f04c1898ce9` |
+| R8 | `abe0b6c2-1621-4906-83cb-bde706e6afd6` | 5087 | | seg7 R6 f1/1↔R7 f0/0 | `11c7c36e-2da8-43aa-a8c5-9f4e30785fbd` |
+| R9 | `b6865830-2fc6-4ffd-9626-4815962062c0` | 5088 | | seg8 R7 f1/0↔R8 f0/0 | `795ae124-c996-45d0-ae95-c3abdb835824` |
+| R10 | `371d0ade-61d4-4867-bb37-9260836b4716` | 5089 | | seg9 R8 f1/0↔R9 f0/0 | `c83a952e-c6a6-4c38-a96f-e1e8696e9ddf` |
+| R11 | `7c11ac67-4e3a-4a52-a4c5-4a58fc3b5265` | 5090 | | seg10 R9 f1/0↔R10 f0/0 | `0493a8c3-6526-4dc3-9e6f-e7f45d696677` |
+| | | | | seg11 R10 f1/0↔R11 f0/0 | `3e36ef02-e3b3-424e-81b5-fdcc2c463bf8` |
+| | | | | host2 R11 f1/0↔host2 eth0（混合链） | `bcef16a5-e9cd-4377-a4d4-a9ba137bceb4` |
+
+（seg1..seg5 与 host1 链 id 不变，见 §3；R1..R6 接口 IP 按 seg 新编号，如 R2 f0/0 10.4.2.1→10.4.3.1。）
+
+## 10.4 路由与端到端验证
+
+- **OSPF 邻接 22/22 全 FULL**：R1=2、R2=3、R3–R10 各 2、R11=1（与 Docker/QEMU 版完全同构）
+- **R1 对远端双下一跳 ECMP**：`show ip route 10.4.0.11/32` → `10.4.2.2 via f1/1` + `10.4.1.2 via f1/0`，metric 11（10 段+1）
+- **host1→host2：traceroute 12 行 = 11 路由器跳 + 1 主机跳**（`.254 → 10.4.2.2 → 10.4.3.2 → … → 10.4.11.2 → 10.4.200.1`，逐跳 22→527ms 线性爬升），ping 20/20 `0% 丢`、**ttl=53**（64−11）、RTT min/avg/max/mdev = 364/521/635/74 ms
+
+## 10.5 kernel datapath 与 filter 能力普查
+
+- **13/13 以太链全部 `kernel_datapath: true`**（11 段中转 + 2 条 dynamips↔docker 混合主机链，含 5 条新建段与重建的 host2 链）；串口 relay 保持 false → 全项目 14 链
+- seg6 `link_available_filters` 返回**全部 13 种**（含 8 种 kernel-only）
+
+## 10.6 filter 数据面精测（seg6 链中段，6 项；单跳探针 R5 ping 10.4.6.2，长 ping 走本地 console TCP）
+
+换算规律与 6 节点版及其它三版一致：**filter 双向各生效一次**。单跳基线 **8/37/64 ms，100/100**（与 6 节点版 seg2 基线 4/37/72 同量级）。
+
+| # | filter | 配置 | 实测 | 理论/判定 |
+|---|---|---|---|---|
+| 1 | delay | [50] | avg 131ms（100/100） | 37+2×50=137 ✓ |
+| 2 | rate | [512kbit]，1400B | avg 90ms（50/50） | 37+2×(1442×8/512k)=82 ✓ |
+| 3 | packet_loss | [10] | **19.0%**（162/200 收） | 1−0.9²=19% 分毫不差 ✓ |
+| 4 | frequency_drop | [3] | 两轮 58% / 56% 丢（各 200 包） | 55.56%；混流相位偏移（见 §10.8-3）≈✓ |
+| 5 | bpf | [icmp[icmptype]==8] | 0/20 | 选择性丢 echo request ✓（OSPF 不受影响） |
+| 6 | duplicate | [20]（E2E host1→host2） | **+45%**（+90/200） | E=(1.2)²=+44% ✓（100 包样本曾测 +62%，短样本偏差） |
+
+测毕 filter 全清 → seg6 基线回归（30/30，20/40/64）、OSPF 无抖动。
+
+## 10.7 性能矩阵（对照 Docker/QEMU 11 节点版）
+
+| 指标 | **Dynamips 11（现行）** | Dynamips 6【10-01】 | QEMU 11 | Docker 11 |
+|---|---|---|---|---|
+| host↔host RTT avg | **521 ms**（364/521/635） | 234 ms | 6.63 ms | 0.36 ms |
+| 每跳延迟 | ~45 ms | ~35-40 ms | ~0.6 ms | <0.1 ms |
+| ttl / traceroute | 53 / 11+1 跳 | 58 / 6+1 跳 | 53 / 11+1 跳 | 53 / 11+1 跳 |
+| iperf3 单流 | **sender 524 K / receiver 114 Kbps**（36 retr） | 524 K / 259 K | 342 Mbps | 2.22 Gbps |
+| iperf3 8 流 | **sender 629 K / receiver 69 Kbps**（43 retr） | 559 K / 167 K（16 流） | 206 Mbps（4 流） | —（16 流 19.4 G） |
+
+- **TCP RTO 崩塌形态**（11 跳 521ms RTT 下被放大）：首 3s 撑 2-3 Mbps → 一次重传后 cwnd 崩至 ~1.4KB、7s 零吞吐、receiver 侧以 69-114 Kbps 慢速排水。6 节点版已见同型（收/发减半+106 retr），**非 kernel datapath 问题**——全链接口 0 collisions/0 errors/0 drops（新段老段同为 Half-duplex 100M，dynamips 不仿真 CSMA/CD 碰撞，duplex 无差异）
+- **全链 delay 锚点（11 段各 [10]）**：E2E min/avg/max = 581/665/693（基线 364/521/635）→ **min Δ=+217ms ≈ 理论 2×10 段×10=+200**；avg Δ=+144 偏小，与 6 节点版同现象（Δ43/50）——filter delay 确定性叠加在 min 上精确呈现，avg 被 dynamips idle-sleep（30ms 片）噪声压缩
+
+结论（实测）：11 节点下 dynamips 每跳开销 ~45ms（比 6 节点版略增），比 QEMU 高 ~75×、比 Docker 高 ~450×；吞吐维持"dynamips 本体瓶颈"结论不变，filter 精度不受影响。
+
+## 10.8 坑清单（本轮新增）
+
+1. **PA-FE-TX 不认 `duplex auto`/`speed auto`**（`% Invalid input`）——新节点 f1/0 无需 duplex 命令，默认即工作（Half-duplex 100M，与老段一致）
+2. **带参 `no ip address <A> <M>` 回显 `Invalid address`**：无实际影响，后续 `ip address <新>` 直接顶替主地址（show brief 验证无残留/无 secondary）
+3. **frequency_drop 混流相位**：every-Nth 计数器对链上全部帧计数，OSPF hello/keepalive/CDP 混入使 ping 视角的丢包率在理论值附近摆动（58%/56% vs 55.56%）；6 节点版曾在同噪声下精确命中 44.44%，属相位运气——**精确验证 frequency_drop 需静默链**
+4. **iperf3 daemon 模式（`-s -D`）偶发 "control socket has closed unexpectedly"**（3 试 1 见；前台 `iperf3 -s` 挂 ws 会话则稳定完成）——低吞吐长 RTT 下 control 通道脆弱，非链路丢包
+5. **duplicate 短样本偏差重现**：100 包 +62%、200 包 +45%（理论 44%）——与 QEMU 版 §10.9-5 同坑，**filter 判定样本 ≥200 再下结论**
+6. 其余 6 节点版坑（console 回放取末条 summary、长 ping 走本地 console TCP、write memory 前先 end、冷启动 2-3 分钟）**继续有效**【沿用 10-01】
+
+## 10.9 stop/start 与快照复验（2026-10-04）
+
+- **R9（新节点）stop/start 专项（通过）**：stop 后锚点 `gdb6865830e0p0/e1p0` **存活且仍挂各自桥**（"stop is not close" 对新节点同样成立）；start 后 NVRAM 自恢复、2×FULL、E2E 10/10 0% 丢 ttl=53
+- **快照 `baseline-dynamips-kernel-datapath-11node-clean`**：全停创建 → `node_start_all` → R1/R6/R11 邻接全 FULL（**重编号后的新地址全部由 NVRAM 自动恢复**）→ E2E 10/10 0% 丢、ttl=53、RTT avg 469ms
+- 收尾状态：14 条链 `filters={}`、13 以太链 `kernel_datapath=true`、OSPF 22/22 Full
+
+---
+*§10 扩展与验证 2026-10-04 via GNS3 MCP（device_config_send / device_show_run / link_update / link_available_filters / snapshot_create / node_console+websocat；长 ping 经本地 console TCP 直连采集，内核对象为只读观察）。数据面结论均为本次实测。*
+
+---
+
 *Built & verified 2026-10-01 via GNS3 MCP（链路/节点/设备操作全程走 MCP：device_config_send / device_show_run / link_update / link_capture_*；设备命令经本地 console TCP 直连采集，内核对象为只读观察）。数据面结论均为实测；服务端实现细节标注【转述】。*
