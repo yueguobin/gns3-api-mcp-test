@@ -435,12 +435,34 @@ host1 ── FRR-qemu-1 ══╪══ FRR-qemu-2 ── 3 ── 4 ── 5 �
 
 **收尾**：测毕已用 `snapshot_restore` 把 virtio 场回滚到 `baseline-qemu-virtio-clean`（实测验证：`adapter_type` 保持 virtio-net-pci、`cpus/maxcpus` 回 1、`ram` 回 256），现场即最优配置态。
 
-## 11.5 尚未验证的后续杠杆（推断，未实测）
+## 11.5 瓶颈归因：uBridge 还是 QEMU？（2026-10-04 实测阶梯）
+
+从 host1 对逐级变远的目标各 ping 20 包（virtio 场、回滚后最优配置态）：
+
+| 目标 | 单向路径 VM 数 | RTT avg（ms） | 增量 |
+|---|---|---|---|
+| 10.2.100.254（N1 e2，终结） | 1 | **0.472** | — |
+| 10.2.0.2（N2 lo） | 2 | 1.267 | +0.795 |
+| 10.2.0.6（N6 lo） | 6 | 3.838 | +0.64/VM（区间） |
+| 10.2.200.1（host2） | 11 | 6.668 | **+0.62/VM**（首尾拟合） |
+
+**线性度极好：每增加 1 个转发 VM，RTT +0.62 ms ⇒ 单向单次 guest 穿越 ≈ 0.31 ms**（首个终结型穿越略低 ≈0.24）。11 VM 全链 6.67 ms ≈ 拟合值，无异常跳变。
+
+归因判据（全部实测）：
+
+1. **无 VM 参照**：同宿主、同机制（GNS3 内核桥 + 两端点）的 docker↔docker 直连链 RTT 仅 **0.067 ms**【Mixed-Kernel-DataPath-Test 10-04 实测】——桥 + veth 全套 <0.1 ms。
+2. **uBridge 不在逐包路径上**（kernel-datapath 链路）：qemu `-netdev tap` 直挂宿主 tap，两端 tap/veth 由**宿主内核桥**转发；tc/netem/eBPF filter 逐 ms 精确生效（§10.6/§11.2）即为内核转发的直接证据。uBridge/GNS3 只负责建桥/拆桥，不泵包。（uBridge 用户态泵包的是 relay 型链路——串口/旧版/跨 compute，本项目的以太链全不是。）
+3. **每跳 0.6 ms 的构成**：0.62 ms（VM 代价）中 ≥90% 属 **QEMU 侧**——tap I/O 唤醒 QEMU 主循环 + VM entry/exit + guest 内核栈处理；桥转发本身 µs 级。e1000 与 virtio 每跳延迟相同（§11.2）⇒ 成本不在网卡模拟，而在 **VM 边界机制本身**。
+4. 剩余不可分割项【推断】：0.31 ms/穿越内部（QEMU 主循环唤醒 vs guest 栈处理）无法用现有工具再拆——需 vhost-net（把 tap 处理从 QEMU 主循环下沉到内核线程）做对照才能分离，GNS3 3.1 未暴露该开关。
+
+**结论（实测）：是 QEMU（VM 穿越）的问题，不是 uBridge 的问题。** uBridge 管理的内核桥全程只贡献 <0.1 ms 量级；每跳 0.6 ms 几乎全部花在 22 次 guest 进出上。要压延迟只剩 vhost-net 一个已知杠杆。
+
+## 11.6 尚未验证的后续杠杆（推断，未实测）
 
 | 杠杆 | 预期 | 依据 |
 |---|---|---|
 | guest 内核调优（tx_queue_len↑、backlog↑） | 小幅 | 推断 |
-| **vhost-net** | 再减一次用户态拷贝/唤醒，**可能压低每跳延迟**（0.6ms/跳的主要嫌疑） | 推断；GNS3 3.1 未暴露开关，`options` 注入会与自动生成的 `-netdev` 冲突，待验证 |
+| **vhost-net** | **直接针对 §11.5 实测的 0.31 ms/穿越**（tap 处理出 QEMU 主循环） | 推断；GNS3 3.1 未暴露开关，`options` 注入会与自动生成的 `-netdev` 冲突，待验证 |
 | 吞吐进一步：MTU 9000 | 减少 pps，间接提吞吐 | 推断；需全链统一改 MTU，改变实验语义 |
 | ~~vCPU / RAM 加大~~ | ~~改善多流上限~~ | **已实测证伪（见 §11.4，反而 −10–15%）** |
 
