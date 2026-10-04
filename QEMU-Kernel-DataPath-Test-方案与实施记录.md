@@ -457,6 +457,30 @@ host1 ── FRR-qemu-1 ══╪══ FRR-qemu-2 ── 3 ── 4 ── 5 �
 
 **结论（实测）：是 QEMU（VM 穿越）的问题，不是 uBridge 的问题。** uBridge 管理的内核桥全程只贡献 <0.1 ms 量级；每跳 0.6 ms 几乎全部花在 22 次 guest 进出上。要压延迟只剩 vhost-net 一个已知杠杆。
 
+### 机制解剖：tap fd 在用户态，copy 到底贵不贵？（2026-10-04 分析）
+
+GNS3 现行为**经典 tap 模式**（实测捕获的 qemu 命令行 `-netdev tap,…` 无 `vhost=on`）。每个包每次 guest 穿越的成本构成：
+
+```
+[前一跳 tap 队列]
+  → QEMU 主循环被 epoll 唤醒           [WAKEUP]  ← 主体（几十~几百 µs）
+  → read(tapfd)：内核→用户态 copy      [COPY #1] ← µs 级
+  → virtio 后端 memcpy 进 guest RAM    （进程内 memcpy，非保护边界）
+  → 注入 IRQ + KVM entry / VM exit     [VM 进出]
+  → guest 内核 RX/TX softirq + 转发
+  → QEMU write(tapfd)：用户态→内核     [COPY #2]
+  → tap → 宿主内核桥 → 下一跳 tap
+```
+
+- 真正跨保护边界的 copy **每次穿越仅 2 次**（tap fd 的 read/write，ping 包 ~µs 级）；QEMU↔guest RAM 那步是进程内 memcpy（guest RAM 即 QEMU 自身 mmap），不跨界。
+- **成本按"每次唤醒"计、不按"每字节"计**：围绕 copy 的编排（主循环唤醒+线程调度+KVM 进出+softirq）为主导，copy 本身占零头。
+
+**满载自洽检验【推断】**：1.73 Gbps ÷ 64 KB GSO/TSO 超帧 ≈ 3375 帧/s/跳 ≈ **0.30 ms/穿越——与空闲单包阶梯测得的 0.31 ms（上文）是同一常数**。即满载时 TCP 靠 offload 把 ~44 个 MSS 打包成一个 64 KB 超帧、一次唤醒全带走（摊薄 44 倍）；**e1000 无 TSO/GSO，每包全额付费**（吞吐崩到 342 Mbps）。"延迟两代网卡相同、吞吐差 5 倍"正是按唤醒计费的指纹。（guest 为 busybox 无 ethtool，offload 状态未能直接核对，故标推断；数值自洽性强。）
+
+**与"uBridge 无责"的统一**："桥在内核"只保证 uBridge 进程与桥转发不进用户态；tap 的**端点服务**仍在用户态——那是 **QEMU 的用户态**。包路径上唯一的用户态进程 = QEMU 自己（每跳醒 2 次、copy 2 次、进出 VM 2 次）。
+
+**vhost-net 的意义**：把 vring 处理交给内核线程（`/dev/vhost-net`），包 tap↔virtio 全程不出内核——两次 copy 与主循环唤醒**同时消失**（TX 另有 zerocopy 路径）。它也是分离 0.31 ms 中 copy/wakeup 占比的唯一干净对照实验；前提是给 gns3server 的 QemuVM 在 tap netdev 后追加 `,vhost=on`（服务端小改）。
+
 ## 11.6 尚未验证的后续杠杆（推断，未实测）
 
 | 杠杆 | 预期 | 依据 |
