@@ -109,6 +109,24 @@ Docker/QEMU/IOU cluster near ~50%, Dynamips near ~60% — i.e. **"relay ⇒ ~50%
 - **IOU and Dynamips don't notice.** IOU's per-hop cost is its userspace IOL forwarder; Dynamips' is MIPS emulation + 30 ms idle-sleep slices. Both are so much slower than the relay that removing the kernel path is invisible in latency and throughput — including a *reduction* in TCP retransmissions for IOU (1541 → ~530) [measured].
 - **Delay semantics hold everywhere**: full-chain anchors reproduce the kernel values (QEMU 11×5 ms: 108.81 ms/116 M vs kernel 109.47 ms/131 M; Dynamips 11×10 ms: Δavg ≈ +100 ms with the deterministic part visible in min; IOU single-hop min Δ96 ≈ 2×50) [measured].
 
+### 5.3 Kernel-datapath gains at a glance
+
+Beyond the filter set (§4), what the kernel datapath actually restores relative to the relay-only build:
+
+| Dimension | Kernel-datapath build | Relay-only build | Substantial gain? |
+|---|---|---|---|
+| Docker E2E latency | 0.36 ms | 1.9–2.2 ms | **Yes** — five to six times lower |
+| Docker aggregate throughput | 19.4 Gbps with 16 streams; 20.2 Gbps with 32 | 1.36 Gbps; 1.2 Gbps | **Yes** — fourteen to seventeen times higher |
+| Docker packets-per-second ceiling | about 1.67 Mpps aggregate, scaling with cores | about 115k pps per-source hard cap | **Yes** — roughly fifteen times higher |
+| Docker short path (one hop) | 9.8 Gbps single stream; 73.9 Gbps with 16 streams | 3.0 Gbps single stream; 2.98 Gbps with 16 streams | **Yes** — about three times higher on a single stream, up to twenty-five times higher with 16 streams |
+| QEMU throughput | 342 Mbps single stream; virtio 1.73 Gbps with flat multi-stream | 148 Mbps; virtio 305–320 Mbps, collapsing under multi-stream | **Yes** — roughly two and a half times higher (about five and a half times with virtio) |
+| QEMU latency | 6.63 ms | 5.5–6.7 ms | **No** — dominated by the VM boundary |
+| IOU / Dynamips | 126 Mbps / 0.52 Mbps | 128–131 Mbps / 0.63 Mbps | **No** — unchanged |
+
+*Packets-per-second figures are arithmetic conversions of the recorded TCP throughputs at ~1500 B frames, not direct pps measurements.*
+
+**In one line:** the kernel datapath is an optimization that removes one userspace forwarding pass per packet — it pays off fully on Docker (the only platform whose native path is fast enough for that pass to matter), partially on QEMU (throughput only, latency being buried by VM wake-up costs), and not at all on IOU or Dynamips.
+
 ---
 
 ## 6. Cross-cutting methodology findings
