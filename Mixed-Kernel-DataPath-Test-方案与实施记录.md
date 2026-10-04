@@ -3,6 +3,7 @@
 > 2026-10-04 建成并全量验证。项目 `Mixed-Kernel-DataPath-Test`（ID `bc54cfdf-cbbf-4363-97a2-e63f8b80c9d5`）。
 > 目的：在**一个项目内混合 7 种节点类型 + 1 台 Ethernet switch**（dynamips / FRRDocker / IOU / IOL-XE docker / SR Linux / XRd docker / Ubuntu docker），测试**当前版本** kernel datapath 的真实效果。
 > 本文所有结论除明确标注【转述】/【推断】外，均为本次实测（证据：MCP link API 原始返回、设备 console 输出）。
+> **同日更新（2026-10-04 稍晚）**：§5 记录的 filter 静默失效缺陷已由 gns3server 团队修复（kernel datapath mixin 单点 ownership 门控：对端不再以空 filter 对共享锚点做破坏性 reconcile）并重启服务。**§5.4 为修复后的全量复验记录**（§5.1–5.3 保留修复前现场原文）。
 
 ## 1. 背景与问题
 
@@ -59,7 +60,7 @@
 |---|---|---|
 | Switch1 e0 ↔ R1 f0/0 | `83040534-7659-4c16-a33a-729815142faa` | true |
 | Switch1 e1 ↔ FRRDocker-1 eth0 | `9e1bfca8-7f70-40d1-b0ef-2c50624d3239` | true |
-| Switch1 e2 ↔ IOU-R-1 e0/0 | `e1883d9d-6683-4512-8ed3-6281a5bc2eae` | true |
+| Switch1 e2 ↔ IOU-R-1 e0/0 | `36d4d747-4f09-4ceb-a77d-de25d5d89adf`（2026-10-04 复验时删建、顺序不变；原 `e1883d9d-…`） | true |
 | Switch1 e3 ↔ CiscoIOL-XE-1 e0/0 | `07df6fb3-ba3e-4e15-980c-ff02909c51c8` | true |
 | Switch1 e4 ↔ SRLinux-1 e1-1 | `d9c8625d-d363-46da-a087-b315c9f86131` | true |
 | Switch1 e5 ↔ XRdControlPlane-1 Gi0/0/0/0 | `4838e02e-009a-49fd-9152-5311d8c034a6` | true |
@@ -106,7 +107,32 @@ API 侧全程确认：`kernel_datapath: true`、`filters` 字段回显设置值�
 
 - **结论【实测】**：同一服务器、同一项目内，**交换机终结链路的 filter 在 API 上"接受并回显"，但数据面完全不执行**（delay / bpf / frequency_drop-1 三种语义迥异的 filter 均零效果；`link_reset` 无效）。直连链同 filter 精确生效，排除"filter 引擎整体故障"。
 - 影响面【实测+推断】：本项目 8 条上行链（Switch1 的每一个端口）全部受影响；Comprehensive Test 的 switch 相关链路（含 switch↔switch）同样按此机制运行（其 API 返回与本文一致，未做数据面重复验证【推断】）。即：**凡链路一端是 ethernet_switch 节点，filter 静默失效**。这是本版服务器在 kernel 化 switch 链路时留下的实现缺口。
-- 实际使用建议：要跑"链路损伤"类实验（delay/loss/rate…），**用节点直连链**，不要用 ethernet switch 中转链；交换机链路只能用于纯转发拓扑。
+- 实际使用建议：要跑"链路损伤"类实验（delay/loss/rate…），**用节点直连链**，不要用 ethernet switch 中转链；交换机链路只能用于纯转发拓扑。（**2026-10-04 已修复，见 §5.4；该建议作废**——交换机链路现已可做损伤实验，注意其单侧单向语义）
+
+### 5.4 修复后复验（2026-10-04，服务端修复并重启后）
+
+修复方式【转述团队】：现场复现 → 排除"旧字节码"假说 → compute 层分离实验锁定"对端 tc reset 抹除"根因 → 在 kernel datapath mixin 单点加 **ownership 门控**（对端不再对共享锚点做破坏性 reconcile）→ 2 条单测 + e2e switch-first 段先红后绿（2110 单测、378s 全量 e2e 通过）。以下复验全部为本次实测（MCP + 设备 console）：
+
+| # | 场景 | 操作 | 复验结果 | 修复前（§5.1） |
+|---|---|---|---|---|
+| 1 | Switch1 e1↔FRR（switch 为 node 0，**原故障顺序**） | 遗留 delay[50]，节点启动后被动生效 | RTT **50.2ms**（首包 101ms＝ARP+单向时延） | 0.05–0.1ms 无效 |
+| 2 | 同上 | 清空 filters | 0.064ms 回基线（**清除机制可用**） | 曾"清了也不生效" |
+| 3 | 同上 | 显式重设 delay[50] | **50.1ms 稳定**（min/avg/max=50.08/50.11/50.18，mdev 0.034） | 无效 |
+| 4 | 同上 | bpf ["icmp"] | **100% 丢包**（5/5） | 无效 |
+| 5 | 同上 | frequency_drop [3]（30 包 ×2 样本） | **40% / 30%**（合计 21/60 ≈ **1/3**） | 无效 |
+| 6 | Switch1 e0↔R1（dynamips 对端） | delay[50] | 基线 23.8ms → **70.5ms**（+50，本体噪声内） | 无效 |
+| 7 | Switch1 e2↔IOU（iou 对端） | delay[50] | 基线 0.84ms → **50.77ms**（mdev 0.032） | 无效 |
+| 8 | **端点顺序反转**（删建为 IOU 在前的新链） | delay[50] | **50.78ms**（与顺序无关） | （该序旧代码本可用） |
+| 9 | stop/start 持久化（FRR 重启，filter 保持下发状态） | node stop→start | 重启后 **50.1ms 依旧生效** | 旧复现步骤当时"仍旧无效" |
+| 10 | 直连链回归（U1↔U2 eth1） | delay[50] | **100.27ms**（2×，mdev 0.057，无回归） | 本就正常 |
+
+**复验结论（实测）**：
+- 交换机终结链路的 filter 数据面**已完全生效**：delay / bpf / frequency_drop 三族精确起效；清空、stop/start 持久化、删建重建均正常；节点直连链无回归。
+- **有效语义（与直连链的差异，实测）**：交换机链路的 filter 装在单侧锚点（交换机侧）上，只作用于**一个方向**——`delay [50]` → RTT **+50ms**（直连链因两端各装一次为 +100ms=2×）；`frequency_drop [3]` 有效丢包 ≈ **1/3**（直连链为 1−(2/3)²=55.6%）。丢包节奏在两个样本间有确定性相位漂移，【推断】为网段偶发广播包（IPv6 RS/MLD 等）掺入 eBPF 计数器所致（未深究，不影响"生效"结论）。
+- **端点顺序无关（实测）**：switch 在 node 0（原故障顺序）与 node 1 均正常——与 ownership 门控的修复方式自洽。
+- 收尾：9/9 链路 filters 全部清空回 `{}`、kernel_datapath 均 true；FRR 0.085ms / R1 20.1ms / 直连 0.057ms 回基线。
+
+> 附修正：Switch1 实为 **8 口**（e0–e7，复验时 `node_get` 确认），此前"21 口"的说法有误。
 
 ## 6. 性能与基线数据
 
