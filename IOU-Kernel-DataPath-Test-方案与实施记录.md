@@ -163,4 +163,114 @@ Ubuntu 镜像 ping `-i 0.01/-i 0.002` 实际间隔下限 ≈9.6ms（300 包耗�
 
 ---
 
+# §10 扩展至 11 节点（2026-10-04，现行基线）
+
+> 本节所有数据均为 2026-10-04 本次实测（MCP link/node API 原始返回 + 设备 console / host ws console 输出）。§1–§9 为 6 节点版历史记录，被引用处标【沿用 10-01】。
+
+## 10.1 背景与目的
+
+按需求原地扩展至 **11×IOU**，与 `Kernel-DataPath-Docker-FRRDocker` / `Kernel-DataPath-Qemu-FRRqemu` / `Dynamips-Kernel-DataPath-test-Cisco7200`（均 11 节点）**逐段同构**（Dynamips §10 / QEMU §10 同款改造）：
+
+1. 同节点数/同跳数（11 节点、10 段中转）下四场性能矩阵直接逐格对照；
+2. 13 条以太链的 kernel 判定与 filter 能力普查（含 5 条新建段）；
+3. 代表性子集 filter 数据面精测（6 节点版 13 种已全测【沿用 10-01】，本轮"全链普查 + 代表性 6 项"）；
+4. 重编号改造后的持久化（NVRAM）与 stop/start 连通性复验。
+
+## 10.2 改造内容（原地扩展，全程节点 stopped）
+
+| 项 | 内容 |
+|---|---|
+| 新增节点 | 5×IOU L3（模板 `12678fbc-…`，**默认名自动续 IOU-R-7..11**，模板 tag `device_type:cisco_ios_telnet` 随建继承） |
+| 链路改造 | 删旧尾链 R6 e0/1↔host2（旧 `8abac282-…`）；新建 6 条：seg7..seg11 + host2 挂 R11 e0/1——**全部建于双端 stopped（deferred wiring），kernel_datapath 一次到位 true** |
+| 重编号 | 既有 6 段 11 个接口 IP 在线重排，**对齐 Docker/QEMU/Dynamips 版 seg 编号**（seg1/seg2=R1↔R2 双平行，seg3..seg11 沿链，近 1 端取 .1）；改法 `no ip address` + `ip address <新>`（IOU 17.18 无 Dynamips 的回显坑） |
+| 串口挪位 | relay 对照串口 10.3.7.0/30 → **10.3.250.0/30**（腾出 seg7..seg11 网段） |
+| 画布 | scene_width 2000→4000；R7..R11 置 x=700..1500、host2 挪 x=1700 |
+| 配置 | R7..R11 device_config_send 全量下发 + R1..R6 重编号推送，尾部 `end`+`write memory` 落 NVRAM |
+
+重编号接口按"先移出目标网段再入"排序避免同机重叠报错（如 R3 先 e0/1 10.3.3.1→10.3.4.1 再 e0/0 10.3.2.2→10.3.3.2）。
+
+## 10.3 拓扑与编址（现行）
+
+```
+ host1 ── R1 ══╪══ R2 ── R3 ── R4 ── R5 ── R6 ── R7 ── R8 ── R9 ── R10 ── R11 ── host2
+(10.3.100.1) e0/2  e0/0+e0/1                                e0/1←e0/0 沿线→  e0/1(.254) (10.3.200.1)
+                └─ R2 Serial2/0 ── R3 Serial2/0（relay 对照 10.3.250.0/30，不进 OSPF）
+```
+
+- Loopback `10.3.0.N/32`；链段 `seg1..seg11 = 10.3.N.0/30`（近 1 端 .1）；主机网 10.3.100/200.0/24（网关 .254）；R3..R10 均用 e0/0（左侧）/e0/1（右侧）
+- OSPFv2 单区：接口级 `ip ospf 1 area 0` + transit `ip ospf network point-to-point`（沿用 6 节点版风格）；主机网接口 ospf area 0 非 p2p
+- 快照：**`baseline-iou-kernel-datapath-11node-clean`（`7d94a923-522a-4177-a767-224c85f218ad`）**；6 节点版旧快照 `baseline-iou-kernel-datapath-clean` 保留可回滚
+
+### node_id / link_id 清单（增量）
+
+| 节点 | node_id | console | | 链段 | link_id |
+|---|---|---|---|---|---|
+| IOU-R-7 | `323dca4e-b8b5-49db-9926-3358fbba8e0d` | 5099 | | seg7 R6 e0/1↔R7 e0/0 | `50bdaee6-1084-44ff-9068-fe4ed900aa07` |
+| IOU-R-8 | `a96d85de-5c4a-41e4-b34e-76be2bc8ea7d` | 5100 | | seg8 R7 e0/1↔R8 e0/0 | `e0cff3e0-4ac7-493e-91f1-95f7c762e0e2` |
+| IOU-R-9 | `988bba14-db14-4a20-9553-e6d0317295ea` | 5101 | | seg9 R8 e0/1↔R9 e0/0 | `f85c48d9-4a19-482e-b6ae-14bea57ca497` |
+| IOU-R-10 | `59b45a83-2396-4259-830c-5041b45151fd` | 5102 | | seg10 R9 e0/1↔R10 e0/0 | `ec0387e7-8169-4792-ad78-d0af09a32427` |
+| IOU-R-11 | `82b1e45b-e9c4-45b3-baa4-077c439c03a5` | 5103 | | seg11 R10 e0/1↔R11 e0/0 | `3397a9f9-855a-45ba-b94c-0b755f270451` |
+| | | | | host2 R11 e0/1↔host2 eth0（混合链） | `b38ebfcf-8ec9-4238-a145-7053c06bb35b` |
+
+（seg1..seg5 与 host1 链 id 不变，见 §3；旧段名↔新段名映射：旧 seg6→seg2、旧 seg2..seg5→seg3..seg6。R1..R6 接口 IP 按 seg 新编号，如 R2 e0/2 10.3.2.1→10.3.3.1。完整现行清单在项目 README。）
+
+## 10.4 路由与端到端验证
+
+- **OSPF 邻接 22/22 全 FULL**：R1=2、R2=3、R3–R10 各 2、R11=1（与 Docker/QEMU/Dynamips 版完全同构）
+- **R1 对远端双下一跳 ECMP**：`show ip route 10.3.0.11` → `10.3.2.2 via e0/1` + `10.3.1.2 via e0/0`，metric 101（10 段+1）
+- **host1→host2：100/100 0% 丢、ttl=53**（64−11），RTT min/avg/max/mdev = **0.867/1.913/3.879/0.509 ms**（单跳基线 R5→10.3.6.2 为 1/1/1ms、IOS 显示粒度 1ms）
+
+## 10.5 kernel datapath 与 filter 能力普查
+
+- **13/13 以太链全部 `kernel_datapath: true`**（11 段中转 + 2 条 IOU↔docker 混合主机链，含 5 条新建段与重建的 host2 链，逐条 link_get 复核）；串口 relay 保持 false → 全项目 14 链
+- seg6 `link_available_filters` 返回**全部 13 种**（含 8 种 kernel-only）
+
+## 10.6 filter 数据面精测（seg6 链中段，6 项；单跳探针 R5 ping 10.3.6.2，E2E host1→host2 各 200 包）
+
+换算规律与 6 节点版及其它三版一致：**filter 双向各生效一次**（RTT 丢包 = 1−(1−L)²、RTT delay = 2×单向）。单跳基线 **1/1/1 ms，50/50**。
+
+| # | filter | 配置 | 实测 | 理论/判定 |
+|---|---|---|---|---|
+| 1 | delay | [50] | 单跳 100/101/102ms（50/50） | 1+2×50=101 ✓ |
+| 2 | rate | [512kbit]，1400B | 单跳 45/45/46ms（20/20） | 2×(1442×8/512k)=45.1+1 ✓ |
+| 3 | packet_loss | [10] | E2E 15%（170/200） | 1−0.9²=19%（σ≈2.6%，1.6σ 内）≈✓ |
+| 4 | frequency_drop | [3] | E2E **55.5%**（89/200） | 1−(2/3)²=55.56% 分毫不差 ✓ |
+| 5 | duplicate | [20] | E2E **+86/200=+43%**（另轮 96） | E=(1.2)²=+44% ✓ |
+| 6 | bpf | [icmp[icmptype]==8] | 过 seg6 0/20；到 R5 e0/1（seg6 之前）20/20 | 选择性丢 echo request ✓（OSPF 全程 Full） |
+
+测毕 filter 全清 → R5/R6 邻接无抖动、基线回归。
+
+## 10.7 性能矩阵（对照 Docker/QEMU/Dynamips 11 节点版）
+
+| 指标 | **IOU 11（现行）** | IOU 6【10-01】 | QEMU 11 | Docker 11 | Dynamips 11 |
+|---|---|---|---|---|---|
+| host↔host RTT avg | **1.91 ms**（0.87/1.91/3.88） | 3.71 ms | 6.63 ms | 0.36 ms | 521 ms |
+| ttl | 53 | 58 | 53 | 53 | 53 |
+| iperf3 单流 | **126 Mbps**（retr 1541） | 247 Mbps | 342 Mbps | 2.22 Gbps | 524 Kbps |
+| iperf3 8 流 | **272 Mbps 聚合**（retr 8472） | 209 Mbps（反降） | 206 Mbps（4 流） | — | 629 Kbps |
+
+- **多流形态反转**：6 节点版 8 流反降（247→209M，IOL 用户态串行化），11 节点版 8 流反超单流 ×2.2（126→272M）——链长翻倍后单流 retr 翻倍（1541）、每流吞吐腰斩，并行流开始补偿；与 QEMU（16 流反降后 4 流回升）同为"VM/用户态包处理瓶颈、非 kernel datapath"的形态家族
+- **跨会话口径说明**：本列 RTT 1.91ms 低于 6 节点版当年 3.71ms（跳数还更多），两轮不同会话宿主负载不同所致；同会话内单跳/多跳、filter 前后的相对结论自洽，跨会话绝对值仅指示性
+- filter 精度不受链长影响（§10.6 全精确），瓶颈在 IOU 用户态转发结论不变【沿用 10-01】
+
+## 10.8 坑清单（本轮新增）
+
+1. **`device_show_run` 同设备一次只发 1 条命令**：2 条时输出互相覆盖（两条都显示后一条结果，本轮复现 2 次）——与 100-node 时代结论一致，批量普查按"每设备 1 条"组织
+2. 新节点首次 `write memory` 的 "different version" 确认提示经 device_config_send 自动通过（[OK]），无需人工干预
+3. 本镜像 `show ip route <ip>/<mask>` 不认 CIDR 掩码写法（`% Invalid input`），用裸地址 `show ip route 10.3.0.11` 即可
+4. IOS ping 单跳探针显示粒度 1ms（min/avg/max = 1/1/1），毫秒以下精度用 host 侧 iputils ping
+5. 其余 6 节点版坑（CDP 消耗 RNG、串口 clock rate、ping 间隔下限 ≈9.6ms、link_list 无 kernel_datapath 字段）**继续有效**【沿用 10-01】
+
+## 10.9 stop/start 与快照复验（2026-10-04）
+
+- **IOU-R-9（新节点）stop/start 专项（通过）**：stop 后 R8/R10 邻接如期消失（链断）→ start 后 NVRAM 自恢复（e0/0=10.3.9.2、e0/1=10.3.10.1 up/up）、2×FULL、全网 22/22
+- **快照 `baseline-iou-kernel-datapath-11node-clean`**：全停创建 → `node_start_all` → R1=2×FULL、R2=3×FULL、R6=2×FULL、R11=1×FULL（**重编号后的新地址全部由 NVRAM 自动恢复**）→ E2E 50/50 0% 丢
+- 收尾状态：14 条链 `filters={}`、13 以太链 `kernel_datapath=true`、OSPF 22/22 Full
+
+---
+
+*§10 扩展与验证 2026-10-04 via GNS3 MCP（node_create/link_create/link_update/link_get/link_available_filters/device_config_send/device_show_run/snapshot_create；host 侧 ping/iperf3 经 ws console+websocat）。数据面结论均为本次实测。*
+
+---
+
 *Built & verified 2026-10-01 via GNS3 MCP（filter/节点/链路控制与设备操作全程走 MCP；流量采样经本地 console TCP + host 侧脚本）。数据面结论均为实测；源码线索与对照版数据已标注来源。*
