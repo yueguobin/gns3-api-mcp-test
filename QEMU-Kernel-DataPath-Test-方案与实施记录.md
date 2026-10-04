@@ -1,8 +1,10 @@
 # QEMU-Kernel-DataPath-Test 方案与实施记录
 
-> 2026-09-30 建成并全量验证。项目 `Qemu-Kernel-DataPath-test-FRRqemu`（ID `2e2db147-61ec-45cc-b129-64f6a0f89d88`）。
+> 2026-09-30 建成并全量验证（6 节点）。项目 `Qemu-Kernel-DataPath-test-FRRqemu`（ID `2e2db147-61ec-45cc-b129-64f6a0f89d88`）。
 > 目的：验证 GNS3 3.1 dev 的 kernel-datapath 链路在 **QEMU 节点**上的实现与效果，与《Docker-Kernel-DataPath-test-FRRDocker》（11×FRRDocker）互为对照。
-> 本文所有数据面结论除明确标注"转述"外，均为本次实测（证据：各步 console/link API 原始输出）。
+> 本文所有数据面结论除明确标注"转述"外，均为实测（证据：各步 console/link API 原始输出）。
+>
+> **⚠️ 现行状态（2026-10-04 起）：项目已原地扩展至 11×FRR-qemu，与 Docker 版逐段同构。§1–§9 为 6 节点建成期原文（历史记录），其拓扑/编址/链路清单已被 §10 取代；现行拓扑、编址、filter 与性能结论一律以 §10 为准。**（原 6 节点快照 `baseline-qemu-kernel-datapath-clean` 仍在快照列表中，可整体回滚到 6 节点态。）
 
 ## 1. 背景与问题
 
@@ -163,3 +165,206 @@ Docker 版曾踩过 stop/start 必废链路 L2 的大坑（ubridge `br_delbr` �
 
 ---
 *Built & verified 2026-09-30 via GNS3 MCP。数据面结论均为实测；Docker 版转述结论已标注。*
+
+---
+---
+
+# §10 扩展至 11 节点（2026-10-04，现行基线）
+
+> 本节所有数据均为 2026-10-04 本次实测（MCP link/node API 原始返回 + 设备 console 输出）。6 节点版旧结论被引用处均已标注【沿用 09-30】。
+
+## 10.1 背景与目的
+
+6 节点场（§1–§9）是 Docker 版 11 节点场的"缩比对照"。本轮按需求**原地扩展至 11×FRR-qemu**，与 `Kernel-DataPath-Docker-FRRDocker`（11×FRRDocker）**逐段同构**，用于：
+
+1. 同节点数/同跳数（11 节点、10 段中转）下 QEMU vs Docker 的性能矩阵直接逐格对照；
+2. 11 条链路的 kernel 判定与 filter 能力普查；
+3. 代表性子集 filter 数据面精测（6 节点版 13 种已全测，本轮按"全链普查 + 代表性子集"策略）；
+4. 重编号改造后的持久化（frr.conf）与 stop/start 连通性复验。
+
+**范围声明（证据来源）**：本轮数据面精测覆盖 7 种 filter（delay / packet_loss / rate / bpf / frequency_drop / gemodel / duplicate）；其余 6 种（corrupt / reorder / seed / limit / quota / window_drop）**本轮未重测**，相关结论仍以 6 节点版 §6 为准【沿用 09-30】，仅在能力普查层面确认其在 11 条链上全部开放。
+
+## 10.2 改造内容（原地扩展）
+
+| 项 | 内容 |
+|---|---|
+| 新增节点 | 5×FRR-qemu（FRR-qemu-7..11，模板 `56fead79-e29c-4397-a1dd-a6c3f2063eb5`，Alpine/8×e1000/256MB；默认命名一次到位，无竞态） |
+| 链路改造 | 删旧尾链 N6 e1 ↔ host2 e0（旧 `b37b89c3-…`）；新建 6 条：N6-N7、N7-N8、N8-N9、N9-N10、N10-N11、N11-host2 |
+| 重编号 | 现有 5 段共 10 个接口 IP 重排，**对齐 Docker 版 seg 编号**（seg1/seg2 = 1↔2 双平行，seg3..seg11 沿链） |
+| 配置通道 | 11 台打 `device_type:cisco_ios_telnet` tag → `device_config_send` **直通 vtysh 批量下发**（含 `write memory` 落 /etc/frr/frr.conf）；shell 层（读 /etc/network/interfaces）仍走 ws console |
+
+改法（每接口，vtysh 配置模式）：`no ip address <旧>` → `ip address <新>` →（transit 口）`ip ospf network point-to-point` → `end` → `write memory`。实测 `write memory` 回显 `Integrated configuration saved to /etc/frr/frr.conf`。
+
+**实测确认：FRR-qemu 的 `/etc/network/interfaces` 全为注释样例，接口 IP 完全由 frr.conf（zebra）驱动**——改 IP 只需 vtysh + write memory，无 OS 层"旧地址残留"风险。
+
+## 10.3 拓扑与编址（现行）
+
+```
+host1 ── FRR-qemu-1 ══╪══ FRR-qemu-2 ── 3 ── 4 ── 5 ── 6 ── 7 ── 8 ── 9 ── 10 ── 11 ── host2
+10.2.100.1   eth2=.254   │  (seg1 + seg2 为 1↔2 双平行 ECMP)                    eth1=.254  10.2.200.1
+```
+
+- Loopback `10.2.0.N/32`；链段**按串接顺序** `seg1..seg11 = 10.2.N.0/30`（近 1 端取 .1）
+- 主机网 `10.2.100.0/24`（host1 .1 ↔ N1 e2 .254）、`10.2.200.0/24`（N11 e1 .254 ↔ host2 .1）
+- OSPFv2 单区：每台 `router ospf` + `ospf router-id 10.2.0.N` + `network 10.2.0.0/16 area 0`（host 网段落在 /16 内自动收编），transit 全 `ip ospf network point-to-point`
+- 持久化：11 台 `write memory`；主机 `/etc/network/interfaces`
+
+### 接口 ↔ 链段对照
+
+| 链段 | 网段 | A 端 | B 端 |
+|---|---|---|---|
+| seg1 | 10.2.1.0/30 | N1 e0 (.1) | N2 e0 (.2) |
+| seg2 | 10.2.2.0/30 | N1 e1 (.1) | N2 e1 (.2) |
+| seg3 | 10.2.3.0/30 | N2 e2 (.1) | N3 e0 (.2) |
+| seg4 | 10.2.4.0/30 | N3 e1 (.1) | N4 e0 (.2) |
+| seg5 | 10.2.5.0/30 | N4 e1 (.1) | N5 e0 (.2) |
+| seg6 | 10.2.6.0/30 | N5 e1 (.1) | N6 e0 (.2) |
+| seg7 | 10.2.7.0/30 | N6 e1 (.1) | N7 e0 (.2) |
+| seg8 | 10.2.8.0/30 | N7 e1 (.1) | N8 e0 (.2) |
+| seg9 | 10.2.9.0/30 | N8 e1 (.1) | N9 e0 (.2) |
+| seg10 | 10.2.10.0/30 | N9 e1 (.1) | N10 e0 (.2) |
+| seg11 | 10.2.11.0/30 | N10 e1 (.1) | N11 e0 (.2) |
+| host1 网 | 10.2.100.0/24 | N1 e2 (.254) | host1 e0 (.1) |
+| host2 网 | 10.2.200.0/24 | N11 e1 (.254) | host2 e0 (.1) |
+
+### node_id 清单（新增 7..11）
+
+| 节点 | node_id | console |
+|---|---|---|
+| FRR-qemu-1 | `e59655d6-87cd-4915-8df8-6bb857617fb6` | 5000 |
+| FRR-qemu-2 | `1373186d-8b95-4e43-8e7d-8e36904ed8fc` | 5005 |
+| FRR-qemu-3 | `42397b9d-5ed7-4b84-b447-57056343a7a4` | 5006 |
+| FRR-qemu-4 | `c6378bf5-5062-40d2-b5c9-afbcf01c9463` | 5014 |
+| FRR-qemu-5 | `d4cbe854-2843-4d45-a20b-ba91aea78cfd` | 5012 |
+| FRR-qemu-6 | `39a2862d-659c-4640-a4f7-1559f43b34e3` | 5015 |
+| FRR-qemu-7 | `8a05baa2-7ae2-4c4b-b0d9-b511243fcd3a` | 5020 |
+| FRR-qemu-8 | `d6ca06c9-1b7b-49f3-a216-77d1c818fcb7` | 5023 |
+| FRR-qemu-9 | `0b28ec3e-c732-4bf9-ac13-08fe61b47d5b` | 5026 |
+| FRR-qemu-10 | `04d316f0-ccc8-45f9-a55b-bae6ad4d637e` | 5029 |
+| FRR-qemu-11 | `b57a7d91-4f5d-40a5-a22b-ff4f13118fe8` | 5032 |
+| UbuntuDockerGuest-1 | `73d9e9a1-00c3-434e-a719-90adcc53549a` | 5018 |
+| UbuntuDockerGuest-2 | `fe87229f-2755-4ad5-b5de-e1d389987d53` | 5019 |
+
+### link_id 清单（13 条，全部 `kernel_datapath: true`）
+
+| 链路 | link_id | 说明 |
+|---|---|---|
+| seg1 N1 e0 ↔ N2 e0 | `e0489018-cca3-48f8-8a9a-6c69d5bc67fc` | 平行 1 |
+| seg2 N1 e1 ↔ N2 e1 | `7d26e21d-ffe6-407d-918d-62da36613e4d` | 平行 2（与 seg1 ECMP） |
+| seg3 N2 e2 ↔ N3 e0 | `a0e96fb3-8231-4e26-932a-2b9c03c651fe` | |
+| seg4 N3 e1 ↔ N4 e0 | `cc6d608c-6144-4fce-8f3c-45109c371430` | |
+| seg5 N4 e1 ↔ N5 e0 | `0382d4e7-7441-4de8-bafb-bbcd610e0501` | |
+| seg6 N5 e1 ↔ N6 e0 | `8952b17d-233d-4674-b8cf-c2005d0553a5` | **filter 主测链（链中段）** |
+| seg7 N6 e1 ↔ N7 e0 | `5a0ae2e9-7c33-4fe3-9b72-87c93887f382` | 新建 |
+| seg8 N7 e1 ↔ N8 e0 | `798cef8c-acdd-4698-a495-93a9fb311c0c` | 新建 |
+| seg9 N8 e1 ↔ N9 e0 | `90e3516c-3b9b-49c9-bc02-6b426a0f8d62` | 新建 |
+| seg10 N9 e1 ↔ N10 e0 | `8f878553-e0b5-4766-841d-1db9454690fd` | 新建 |
+| seg11 N10 e1 ↔ N11 e0 | `0ac76211-866c-4892-b2e7-fb840d1c0d1a` | 新建 |
+| host1 N1 e2 ↔ host1 e0 | `a372023f-56e5-4f13-b211-b871e6920603` | 混合链 qemu↔docker |
+| host2 N11 e1 ↔ host2 e0 | `47a423f6-d588-4824-8404-7e691484755f` | 新建（原 N6 侧旧链已删） |
+
+## 10.4 路由与端到端验证
+
+- **OSPF 邻接 22/22 Full**：N1=2、N2=3、N3–N10=2、N11=1（每条链两两 Full，与 Docker 版一致）
+- **host1 → host2：traceroute 11 个路由器跳 + 1 个主机跳**（`.254 → 10.2.1.2 → 10.2.3.2 → … → 10.2.11.2 → 10.2.200.1`），ping 20/20 `0% 丢`、**ttl=53**（64−11）
+- **N1 对远端 /32 双下一跳 ECMP**：`show ip route 10.2.0.11/32` → `* 10.2.1.2 via eth0` + `* 10.2.2.2 via eth1`
+- N6 路由表：左半（.1–.5、10.2.100.0/24）走 eth0，右半（.7–.11、10.2.200.0/24）走 eth1，metric 逐跳 +100，无环路
+
+## 10.5 kernel datapath 与 filter 能力普查
+
+- **13/13 链路全部 `kernel_datapath: true`**（含 5 条新建链与重建的 host2 链）
+- **13/13 链路 `link_available_filters` 均返回全部 13 种**（frequency_drop / packet_loss / delay / corrupt / bpf / rate / reorder / gemodel / duplicate / seed / limit / quota / window_drop），含全部 8 种 kernel-only 类型
+- 实现证据（node_get 的 qemu 命令行）：`-netdev tap,id=gns3-N,ifname=gq<nodeid>e<N>p0,script=no` —— QEMU 网卡直挂宿主 tap，filter 走内核 tc/eBPF
+
+## 10.6 filter 数据面精测（seg6 链中段，7 项，E2E host1→host2）
+
+换算规律与 6 节点版/Docker 版一致：**filter 双向各生效一次**（RTT 丢包 = 1−(1−L)²、RTT delay = 2×单向、rate 按帧长 = IP+14B 序列化）。
+
+| # | filter | 配置 | 实测 | 理论/判定 |
+|---|---|---|---|---|
+| 1 | delay | [10] | RTT min/avg/max = 24.477/27.474/29.082 ms（基线 6.63） | 6.63+2×10=26.6 ✓ |
+| 2 | packet_loss | [10] | **20.5%**（200 包样本；另轮 100 包样本 12% 属抽样波动） | 1−0.9²=19% ✓ |
+| 3 | frequency_drop | [3] | **56%**（100 包） | 1−(2/3)²=55.56% eBPF 精确 ✓ |
+| 4 | bpf | ["icmp"] | **100%**（5/5 全丢） | ✓ |
+| 5 | rate | ["512kbit"] | 1400B：53.24 ms；56B：9.59 ms | 理论 51.7 / 9.66（按帧长序列化）✓ |
+| 6 | gemodel | [10,10,50] | **45%**（100 包） | 单向 p/(p+r)×(1−h)=25% → RTT 43.75% ✓ |
+| 7 | duplicate | [20] | **+86/200 = 43%**（另轮 50 包样本 +32/50=64%，见坑 §10.9-5） | 双向各 20% → RTT +44% ✓ |
+
+测毕 7 项后：filter 全部清空回 `{}`、OSPF 无抖动（seg6 两端 9m+ 未断）、基线 RTT 6.07 ms / iperf 329 Mbps 回归正常。
+
+## 10.7 性能矩阵（对齐 Docker 版方法）
+
+### 基线（filter 全清）
+
+| 指标 | 实测 |
+|---|---|
+| host↔host RTT | **6.63 ms**（min/avg/max/mdev = 3.683/6.628/7.947/1.011，20 包） |
+| ttl / 跳数 | ttl=53；traceroute 11 路由器跳 |
+| iperf3 单流 | **342 Mbps** 发 / 340 收（-t 10，274 retr） |
+| iperf3 反向单流 | 331 / 328 Mbps（对称） |
+| iperf3 4/8/16/32 流 | **168 / 206 / 171 / 147 Mbps**（-t 8；retr 519 / 1554 / 2327 / 4166） |
+
+**多流不升反降**（342 → 168/206/171/147），重传随流数暴涨——e1000 单队列 + VM 上下文切换串行化，与 6 节点版形态一致【沿用 09-30 同结论】，与 Docker 版"多流聚合至 19.4 Gbps"相反。
+
+### delay × 吞吐曲线（seg1+seg2 双平行链同档 delay，对齐 Docker 版做法）
+
+| delay/链 | RTT | 单流 | 16 流 |
+|---|---|---|---|
+| 0（基线） | 6.63 ms | 342 Mbps | 171 Mbps |
+| 1 ms | 8.15 ms | 326 Mbps | 121 Mbps |
+| 5 ms | 16.78 ms | 309 Mbps | 122 Mbps |
+| 10 ms | 27.13 ms | 262 Mbps | 111 Mbps |
+| 20 ms | 47.28 ms | 206 Mbps | 105 Mbps |
+
+**关键差异（vs Docker 版）**：QEMU 场单流吞吐对 RTT **不敏感**（0→20 ms 仅降 40%），Docker 场同实验从 2.22 G 崩到 262 M（降 88%）。⇒ **QEMU 的瓶颈是 VM 包处理 CPU（每跳 ~0.6 ms 模拟开销），不是 cwnd/RTT**；Docker 的瓶颈才是 RTT。这解释了为何"QEMU 加延迟不掉速、Docker 加延迟掉速"。
+
+### 全链 delay 锚点（11 段每段 5 ms，与 6 节点版同档可比）
+
+| 指标 | QEMU 11 节点（现行） | QEMU 6 节点【09-30】 |
+|---|---|---|
+| RTT | **109.47 ms**（理论 2×10 段×5+6.6=106.6） | 53.85 ms（2×5 段×5+4.6） |
+| 单流 | **131 Mbps** | 317 Mbps |
+| 16 流 | 97.7 Mbps | —（6 节点版未测该点） |
+
+### 三场横向对照
+
+| 指标 | **QEMU 11 节点（现行）** | QEMU 6 节点【09-30】 | Docker 11 节点【对照场】 |
+|---|---|---|---|
+| host↔host RTT | 6.63 ms | 4.58 ms | 0.36 ms |
+| 每跳延迟 | ~0.6 ms | ~0.7 ms | <0.1 ms |
+| ttl / traceroute | 53 / 11 路由器跳 | 58 / 7 跳 | 53 / 11 路由器跳 |
+| iperf3 单流 | 342 Mbps | 609 Mbps | 2.22 Gbps |
+| iperf3 16 流 | 171 Mbps（反降） | 440 Mbps（反降） | 19.4 Gbps（聚合） |
+| 全链 delay 5ms 单流 | 131 Mbps | 317 Mbps | — |
+
+结论（实测）：
+
+- 同为 11 节点 10 段中转，**QEMU 每跳开销比 Docker 高一个量级**（e1000 设备模拟 + Alpine 内核转发），端到端吞吐约为 Docker 的 1/6.5（342M vs 2.22G）；
+- 吞吐随跳数下降（6 节点 609M → 11 节点 342M），但**非线性 1/RTT**（若纯 1/RTT 应降至 421M），说明 QEMU 场是"CPU 吞吐上限 + RTT"双重限制；
+- filter 对 docker/qemu 链同等精确（换算规律完全一致），**瓶颈始终在 VM 转发路径，不在 kernel datapath**。
+
+## 10.8 坑清单（本轮新增）
+
+1. **console tty 模式跨连接共享（新踩）**：ws console 里发 `exit` 会把该 VM 的常驻 tty 从 vtysh 掉到 root shell；随后 `device_config_send`（netmiko）连的是**同一个 tty**，配置命令全部执行失败（`-ash: interface: not found`）。修法：ws 里发 `vtysh` 把 tty 送回（或重连后先确认提示符）。
+2. **FRR-qemu 可走 device 工具直通（本轮新增能力，效率大幅提升）**：给节点打 `device_type:cisco_ios_telnet` tag 后，`device_config_send`/`device_show_run` 对 FRR-qemu 的 vtysh 完全可用（FRR 8.2.2 兼容 IOS 语法推送 + `write memory` 落盘）；shell 层操作（如读 `/etc/network/interfaces`）仍需 ws console。6 节点时期"ws 逐条推送"的姿势不再是唯一选择。
+3. **改主地址要 `no ip address <旧>` 再 `ip address <新>`**，不要直接叠加（避免旧地址残留为 secondary）。
+4. **FRR-qemu 的 `/etc/network/interfaces` 全为注释样例**——IP 由 frr.conf（zebra）驱动，改 IP 无 OS 层双地址风险（本次实测确认）。
+5. **filter 判定样本量 ≥200**：packet_loss [10] 100 包样本测 12%、200 包样本 20.5%；duplicate [20] 50 包样本 +64%、200 包样本 +43%——短样本极易误判成"filter 不准"。
+6. 其余 6 节点版坑（vtysh 无 ping、write memory 提示正常、console 窄屏回绕、QEMU 启动 45–60s、window_drop 编排延迟须 start≥15s、`ping -O` 坑）**继续有效**【沿用 09-30】。
+
+## 10.9 快照与持久化复验（2026-10-04）
+
+- 全部 filter 清空 → `node_stop_all` → 快照 **`baseline-qemu-kernel-datapath-11node-clean`**（`bb39ce6d-0cdd-436f-b341-ef5c6f230ede`）→ `node_start_all`，等待 ~80s 收敛后复验：
+
+| 检查项 | 结果 |
+|---|---|
+| FRR-qemu-1 邻接 | 2×Full（**重编号后的新地址** 10.2.1.1 / 10.2.2.1 自动恢复） |
+| FRR-qemu-6 / FRR-qemu-10 邻接 | 2×Full（seg6+seg7、seg10+seg11） |
+| FRR-qemu-11 邻接 | 1×Full（10.2.11.1） |
+| host1 → host2 | 10/10 收、**0% 丢**、RTT avg 6.49 ms |
+| device 工具 | 重启后仍可用（console tty 自动落回 vtysh） |
+
+⇒ **重编号后的 11 台接口 IP 全部由 frr.conf 自动恢复**、无 OS 层残留地址；stop/start 后链路无孤儿化问题【与 §9 的 QEMU tap 路径结论一致】。收尾状态：13 条链 `filters={}`、全部 `kernel_datapath=true`、OSPF 22/22 Full。
+
+---
+*§10 扩展与验证 2026-10-04 via GNS3 MCP（链路/节点/设备操作全程走 MCP：device_config_send / device_show_run / node_console+websocat / link_update / link_available_filters / snapshot_create）。数据面结论均为本次实测。*
