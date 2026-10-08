@@ -152,20 +152,69 @@ Reno 理论线：T = 1.22·MSS·8/(RTT·√p)，MSS=1448，RTT 取各档实测�
 3. packet_loss chance 只收整数（0.1 静默丢弃）——E2 已记录，维持。
 4. OSPF 邻接在本批全部损伤（含 33% 队列丢包、5% 乱序、20% 周期断网）下持续 Full 累计 1h01m 未断。
 
-## 8. 实验菜单状态
+## 8. 场景 2：控制面 × 数据面（E12–E15，2026-10-08 第三批）
+
+### 8.1 E12：bpf 精确斩首 OSPF（`ip proto 89`）
+
+时间线（150s 带时间戳后台 ping，0.2s 间隔，全程解耦 MCP 延迟）：
+
+| 阶段 | 事件 | 证据 |
+|---|---|---|
+| t≈5s | R1—R2 上 bpf `ip proto 89` | filter echo 确认 |
+| t≈5–45s | **数据面完全无感**（路由仍在转发表） | ping 零丢 |
+| t≈45s | dead timer 到点，R2 邻居从表内消失 | `show ip ospf neighbor` 只剩 3.3.3.3 |
+| t≈50s | SPF 切备路 | traceroute：R1→**R3**(10.0.13.2)→**R4**(10.0.34.2)→host2 |
+| t≈70s | 撤 filter | — |
+| t≈73s | 邻居重建 Full | Up Time 显示撤后 ~3s |
+| 全程 | **750 发 749 收，仅丢 1 包（0.13%）** | 切换黑洞=单包级 |
+
+结论：**控制面被精确击杀的整周期（~65s），数据面代价 = 1 个 ping**；dead timer 静默期数据完全无感、到点亚秒切换、撤后秒级自愈。bpf 选择性损伤是"停协议不停转发"类故障的唯一低成本复现手段。
+
+### 8.2 E13：bpf `icmp`——"ping 不通但业务通"
+
+同一 filter 存续期内并发三项：ping 5/5 全丢（**100%**）、iperf3 **5.95 Gbit/s** 满速、OSPF 双邻居 Full（2m42s 无扰动）。排错假象一比一复现。
+
+### 8.3 E14：gemodel vs packet_loss——同均值、不同相关性
+
+hello 10s / dead 40s，观察窗各 3 分钟（均值≈30%）：
+
+| 模型 | 参数 | 邻居表现 |
+|---|---|---|
+| 独立随机 | packet_loss [30] | 3 分钟 1 次翻动后恢复（窗口内撞上 4 连丢的先验概率 ~14%，合理波动） |
+| 突发（Gilbert-Elliot） | gemodel [5,12,100]（均值 29.4%，坏态突发均值≈8.3 个 hello≈83s > dead 40s） | **多次翻动、观察结束时 Up Time 仅 2.8s（还在翻）** |
+
+结论：**同均值下突发模型对 OSPF 的杀伤显著更强**——独立 30% 只是偶发翻动，突发版周期性打死邻居。丢包"相关性"是独立于均值的第二个损伤维度，也是普通工具给不了、gemodel 独有的价值点。
+
+### 8.4 E15：window_drop 长窗口路由翻动（[start 5s, outage 45s, chance 100, period 120s]）
+
+300s 长 ping（0.2s 间隔）丢包分段：
+
+```
+run 87-268    len 182 包（36.4s 黑洞）
+run 665-846   len 182 包
+run 1242-1423 len 182 包   +孤立 1 包（回主路 blip）
+```
+
+- **三窗等长 36.4s、间隔 115.6s≈120s 周期**、窗外零丢——周期性路由翻动形态完整。
+- 黑洞时长解剖：45s 窗 = 前 ~36s 数据黑洞（dead timer 倒计时、路由仍指主路）+ 后 ~8.6s 走备路恢复；切换点=最后 hello+40s，与计时器语义吻合。
+- 每周期一次完整"黑洞→切备→窗口结束→重建→回主"，邻居表采样（Up 25.6s）与第三窗结束时刻对齐。
+
+## 9. 实验菜单状态（终版）
 
 | # | filter | 实验 | 状态 |
 |---|---|---|---|
 | E1/E2 | 基线/丢包曲线 | §3 | ✅ |
-| E3 | packet_loss correl | 突发 vs 独立 | ⛔ 服务端 bug（§7.2） |
+| E3 | packet_loss correl | 突发 vs 独立 | ⛔ 服务端 bug（§7.2），修后补测 |
 | E4/E5 | delay/rate+delay | RTT 缩放/BDP 墙 | ✅（§3/§6.1） |
 | E6 | limit | bufferbloat vs 小队列 | ✅（§6.1） |
 | E7 | reorder | 乱序伪重传 | ✅（§6.2） |
-| E8 | seed | 复现性边界 | ✅（§6.3，结论=对自由 TCP 不可复现） |
+| E8 | seed | 复现性边界 | ✅（§6.3，对自由 TCP 不可复现） |
 | E9 | frequency_drop | 确定性 vs 随机 | 半成（§3 R7：0.66×，待大窗口复验） |
 | E10 | duplicate/corrupt | 等效丢包 | ✅（§6.4） |
 | E11 | window_drop 四参 | 周期断网 | ✅（§6.5） |
-| E12 | bpf proto 89 | 只杀 OSPF→切备路 | 待做（场景 2） |
-| E13 | bpf icmp | ping 假象 | 待做（场景 2） |
-| E14 | gemodel vs packet_loss | 同均值邻居容错 | 待做（场景 2） |
-| E15 | window_drop 长窗口 | 路由翻动 | 待做（场景 2） |
+| E12 | bpf proto 89 | 只杀 OSPF→切备路 | ✅（§8.1） |
+| E13 | bpf icmp | ping 假象 | ✅（§8.2） |
+| E14 | gemodel vs packet_loss | 同均值邻居容错 | ✅（§8.3） |
+| E15 | window_drop 长窗口 | 路由翻动 | ✅（§8.4） |
+
+三期全部完成（2026-10-08）：15 项实验 13 项闭环、1 项被服务端 correl bug 挡住、1 项半成待大窗口复验。13 种 filter 中 11 种在本场留下可引用数据（frequency_drop/delay/packet_loss/rate/limit/reorder/seed/duplicate/corrupt/window_drop/bpf/gemodel——12 种；correl 待修）。
