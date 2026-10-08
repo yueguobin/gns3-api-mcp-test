@@ -93,18 +93,79 @@ Reno 理论线：T = 1.22·MSS·8/(RTT·√p)，MSS=1448，RTT 取各档实测�
 - Ubuntu docker console 禁发 \x03、禁 exit；websocat timeout 贴输入时长；token 单次有效
 - 画布文字板：一个 drawing = 一个 svg + 一个图形元素，多行 = text 内字面换行符
 
-## 6. 后续实验菜单
+## 6. 第二批实验：E5/E6/E7/E8/E10/E11（2026-10-08 续跑）
+
+### 6.1 E5/E6：限速 rate × 队列 limit × 时延 delay（bufferbloat 三元组）
+
+负载下 RTT 由后台 ping（`ping -c 30 -i 0.3` 与 iperf3 并行）测得：
+
+| 组合 | 吞吐(sender) | 负载 RTT avg/max | ping 丢包 | Retr |
+|---|---|---|---|---|
+| rate 100M（队列默认 1000 包） | 98.2M | 89.9 / 120.7ms | 0% | 55 |
+| rate 100M + delay 25（深队列） | 95.9M | 115.4 / 145.8ms | 0% | 68 |
+| rate 100M + delay 25 + limit 50（浅队列） | 10.6M | 50.2 / 50.7ms | 6.7% | 139 |
+| delay 25 only（对照，无 rate） | 197M | 50.4 / 52.8ms | 0% | 1995 |
+| delay 25 + limit 100（无 rate） | 21.0M | 50.4ms | 0% | 249 |
+| delay 25 + limit 10（无 rate） | 2.10M | 50.4ms | 33.3% | 49 |
+
+结论：
+- **bufferbloat 完整形态**：同样限速 100M，深队列=满吞吐但 RTT 膨胀 2.3×（空载 0.12ms→满载 115ms）；浅队列=RTT 贴住 50ms 底但吞吐塌到 10.6M——50 包（75KB）队列装不下 100M×50ms=625KB 的 BDP，loss-based 拥塞控制填不满管道。教科书级权衡曲线。
+- **netem 的 delay 是"每包定时器"不是串行化瓶颈**：仅 delay 无 rate 时队列再深也不叠 RTT（50.4ms 平），吞吐天花板 ~200M 来自 TCP 突发撞 limit 溢出（Retr ~2000 而 ping 0% 丢）。**要有 RTT 膨胀必须配 rate**。
+
+### 6.2 E7：乱序 reorder（配 delay 25）
+
+| 档 | 吞吐(sender) | Retr |
+|---|---|---|
+| reorder 1% | 14.7M | 314 |
+| reorder 5% | 46.2M | 4007 |
+
+- 1% 乱序即把吞吐打到 delay-only 的 7%；Retr（314）远超同档真丢包（25）——伪快速重传。
+- 5% 反而比 1% 高（46M vs 14.7M）。【推断】持续高乱序促使内核快速抬升 dupthresh 容忍度，伪重传被 DSACK 撤销砍窗；4007 次重传约 8% 带宽开销。
+
+### 6.3 E8：seed 复现（delay25+loss1%+seed 12345，换值再换回重武装）
+
+| 轮 | 逐秒序列(Mbit/s) | 总吞吐 | Retr |
+|---|---|---|---|
+| A | 12.6/2.1/2.1/4.2/4.2/2.1/2.1/2.1/2.1/3.1 | 3.67M | 25 |
+| B | 14.7/2.1/3.2/5.2/2.1/0.0/3.2/2.1/3.2/5.2 | 4.09M | 27 |
+
+**两轮不一致——seed 对自由运行的 TCP 不构成复现**。【推断】seed 固定的是 PRNG 序列（按包序消费），TCP 每轮发包节奏漂移导致丢包落点漂移；可复现性只对固定节奏的探测流成立。修正"seed=实验可复现"的朴素预期。
+
+### 6.4 E10：重复 duplicate / 损坏 corrupt（配 delay 25）
+
+| 档 | 吞吐(sender) | Retr | 对照 |
+|---|---|---|---|
+| duplicate 1% | 190M | 1888 | ≈delay-only 207M，可忽略 |
+| corrupt 1% | 4.61M | 28 | ≈packet_loss 1% 的 5.03M/25 |
+
+- **corrupt=等效丢包**：校验和坏包被 TCP 按丢包重传，吞吐/Retr 与同档 packet_loss 几乎重合。
+- duplicate 1% 在 G 速率下被队列噪声掩盖，影响可忽略。
+
+### 6.5 E11：周期断网 window_drop（delay25 + [start 3s, outage 2s, chance 100, period 10s]）
+
+30 秒长 ping：60 发 48 收，**丢包 20.0% = 占空比 2s/10s 精确命中**；窗口外 RTT 稳定 50.4ms——周期黑洞+自愈形态成立（双向同时断，等效链路闪断）。
+
+## 7. 更正与确认（操作侧）
+
+1. **link_update 的 kwargs 必须用 `{"filters": {...}}` 包裹**：裸 filter 字典在部分场景静默失败（整包忽略或部分应用，无任何报错）。本批曾据此误判"rate 与 limit 互斥""seed 不可下达"，经正确格式复验**全部作废**——三 filter 共存（delay+rate+limit）与 seed 下达均正常。教训已记 memory。
+2. **correl bug 确认保留**（与格式无关）：packet_loss 带 correl 参数时（如 [1,25]）配置被接受、echo 正确，但数据面不丢包（200 包 ping 0 丢失，该事件概率≈1.8%），吞吐回到无丢包天花板。**E3（突发 vs 独立丢包）被此 bug 挡住，待服务端修复后补测**。
+3. packet_loss chance 只收整数（0.1 静默丢弃）——E2 已记录，维持。
+4. OSPF 邻接在本批全部损伤（含 33% 队列丢包、5% 乱序、20% 周期断网）下持续 Full 累计 1h01m 未断。
+
+## 8. 实验菜单状态
 
 | # | filter | 实验 | 状态 |
 |---|---|---|---|
-| E3 | packet_loss correl | 突发 vs 独立丢包（同均值） | 待做 |
-| E4/E5 | delay / rate+delay | RTT 缩放（已随 E2 完成）/ BDP 墙 | 半成 |
-| E6 | limit | bufferbloat vs 小队列（delay-only 207M 天花板已到手） | 待做 |
-| E7/E8 | reorder / seed | 乱序伪重传 / 逐次复现 | 待做 |
-| E9 | frequency_drop | 确定性 vs 随机（0.66× 初值已到手，待大窗口复验） | 半成 |
-| E10 | duplicate+corrupt | 等效丢包 | 待做 |
-| E11 | window_drop 四参 | 周期断网自愈 | 待做 |
-| E12 | bpf proto 89 | 只杀 OSPF→亚秒切备路 | 待做 |
-| E13 | bpf icmp | ping 不通业务通 | 待做 |
-| E14 | gemodel vs packet_loss | 同均值邻居容错 | 待做 |
-| E15 | window_drop 长窗口 | 路由翻动 | 待做 |
+| E1/E2 | 基线/丢包曲线 | §3 | ✅ |
+| E3 | packet_loss correl | 突发 vs 独立 | ⛔ 服务端 bug（§7.2） |
+| E4/E5 | delay/rate+delay | RTT 缩放/BDP 墙 | ✅（§3/§6.1） |
+| E6 | limit | bufferbloat vs 小队列 | ✅（§6.1） |
+| E7 | reorder | 乱序伪重传 | ✅（§6.2） |
+| E8 | seed | 复现性边界 | ✅（§6.3，结论=对自由 TCP 不可复现） |
+| E9 | frequency_drop | 确定性 vs 随机 | 半成（§3 R7：0.66×，待大窗口复验） |
+| E10 | duplicate/corrupt | 等效丢包 | ✅（§6.4） |
+| E11 | window_drop 四参 | 周期断网 | ✅（§6.5） |
+| E12 | bpf proto 89 | 只杀 OSPF→切备路 | 待做（场景 2） |
+| E13 | bpf icmp | ping 假象 | 待做（场景 2） |
+| E14 | gemodel vs packet_loss | 同均值邻居容错 | 待做（场景 2） |
+| E15 | window_drop 长窗口 | 路由翻动 | 待做（场景 2） |
