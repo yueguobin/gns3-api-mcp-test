@@ -145,10 +145,22 @@ Reno 理论线：T = 1.22·MSS·8/(RTT·√p)，MSS=1448，RTT 取各档实测�
 
 30 秒长 ping：60 发 48 收，**丢包 20.0% = 占空比 2s/10s 精确命中**；窗口外 RTT 稳定 50.4ms——周期黑洞+自愈形态成立（双向同时断，等效链路闪断）。
 
+### 6.6 E3 补测：同均值"突发 vs 独立"丢包（gemodel 替代 correl，2026-10-08 第四批）
+
+内核 correl 缺陷（§7.2）确认后，突发臂改用 gemodel，与随机臂背靠背成对测量：
+
+| 臂 | filter | 均值丢包 | 吞吐(sender/receiver) | Retr |
+|---|---|---|---|---|
+| 随机 | packet_loss [1] | 1.0% | 5.35 / 4.28M | 38 |
+| 突发 | gemodel [1,10,10] | ≈0.9% | 4.61 / 3.86M | 53 |
+
+- 突发臂吞吐为随机臂的 **0.86×**，与轮间波动（R2 与本批随机臂差 ±6%）同量级——**同均值下丢包相关性对 TCP 稳态吞吐的影响温和（≤15%）**。
+- 与 E14（§8.3）合成完整结论：**相关性的杀伤主要在控制面**——同均值下 OSPF 邻居是"偶发翻动 vs 持续翻动"的生死之差，而 TCP 吞吐差别不大。突发损伤的价值场景是会话/协议保持类实验，不是吞吐类实验。
+
 ## 7. 更正与确认（操作侧）
 
 1. **link_update 的 kwargs 必须用 `{"filters": {...}}` 包裹**：裸 filter 字典在部分场景静默失败（整包忽略或部分应用，无任何报错）。本批曾据此误判"rate 与 limit 互斥""seed 不可下达"，经正确格式复验**全部作废**——三 filter 共存（delay+rate+limit）与 seed 下达均正常。教训已记 memory。
-2. **correl bug 确认保留**（与格式无关）：packet_loss 带 correl 参数时（如 [1,25]）配置被接受、echo 正确，但数据面不丢包（200 包 ping 0 丢失，该事件概率≈1.8%），吞吐回到无丢包天花板。**E3（突发 vs 独立丢包）被此 bug 挡住，待服务端修复后补测**。
+2. **correl 无效的根因=Linux 内核 netem 实现缺陷（非本服务端问题）**【转述用户的根因分析+我方实测，2026-10-08】：packet_loss 带 correl（如 [1,25]）时数据面有效丢包率塌向零（我方实测：200 包 ping 0 丢失、吞吐回 195M 无丢包天花板）。用户侧证据链：①tc qdisc show 两锚点上 `netem ... loss 1% 25%` 真实在位，server→ubridge→netlink 全链无罪；②**stock iproute2 绕开 uBridge 直接复现**（`loss 1% 25%` 1000 ping 0 丢，对照 `loss 1%` → 2.3% 正常）；③根因在 sch_netem.c（7.2.6）`get_crandom`：`answer = (value*((1<<32)-rho) + last*rho) >> 32` **截断不取模回绕** → 平稳分布两端自我强化饿死 → 名义 loss P ≲ correl C 时有效丢包率塌零（按源码逐位模拟 10⁶ 采样：1%+25%c → 0.0002%；10%+25%c → 1.8% 且实测往返 3.8% 吻合；50% 对称点幸存）。**duplicate/reorder 的小速率 correl 同样中招。E3 的正解=gemodel**（独立马尔可夫链+纯均匀 draw，免疫此缺陷；用户实测 gemodel [1,10,10] 均值≈0.9%，2000 ping 丢 1.15% 且含真实连续丢包段）。
 3. packet_loss chance 只收整数（0.1 静默丢弃）——E2 已记录，维持。
 4. OSPF 邻接在本批全部损伤（含 33% 队列丢包、5% 乱序、20% 周期断网）下持续 Full 累计 1h01m 未断。
 
@@ -204,7 +216,7 @@ run 1242-1423 len 182 包   +孤立 1 包（回主路 blip）
 | # | filter | 实验 | 状态 |
 |---|---|---|---|
 | E1/E2 | 基线/丢包曲线 | §3 | ✅ |
-| E3 | packet_loss correl | 突发 vs 独立 | ⛔ 服务端 bug（§7.2），修后补测 |
+| E3 | correl→gemodel | 突发 vs 独立 | ✅（§6.6，gemodel 替代；内核 correl 缺陷见 §7.2） |
 | E4/E5 | delay/rate+delay | RTT 缩放/BDP 墙 | ✅（§3/§6.1） |
 | E6 | limit | bufferbloat vs 小队列 | ✅（§6.1） |
 | E7 | reorder | 乱序伪重传 | ✅（§6.2） |
@@ -217,4 +229,4 @@ run 1242-1423 len 182 包   +孤立 1 包（回主路 blip）
 | E14 | gemodel vs packet_loss | 同均值邻居容错 | ✅（§8.3） |
 | E15 | window_drop 长窗口 | 路由翻动 | ✅（§8.4） |
 
-三期全部完成（2026-10-08）：15 项实验 13 项闭环、1 项被服务端 correl bug 挡住、1 项半成待大窗口复验。13 种 filter 中 11 种在本场留下可引用数据（frequency_drop/delay/packet_loss/rate/limit/reorder/seed/duplicate/corrupt/window_drop/bpf/gemodel——12 种；correl 待修）。
+四批全部完成（2026-10-08）：**15 项实验 14 项闭环**、E9 半成待大窗口复验。13 种 filter 全部在本场留下可引用数据（correl 因内核缺陷以 gemodel 等效替代完成其语义）。遗留事项：①E9 大窗口复验（可配）;②内核 correl 缺陷影响 netem 原生 correl 语义（duplicate/reorder 小速率 correl 同中招），用户侧已定位根因（sch_netem.c get_crandom 截断不回绕），是否上游反馈由用户定夺。
