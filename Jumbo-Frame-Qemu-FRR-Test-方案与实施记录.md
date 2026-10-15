@@ -80,9 +80,23 @@ H1(UDG) ──10.9.1.0/24── R1(FRR-qemu/virtio) ──10.9.12.0/31── R2(
 - H2 snmp 的 Reasm 字段与分片数不严格对应(内核字段语义/版本差异),以 ping/iperf3 行为为主证据,R1 的 Frag 三元组干净自洽
 - 65521 档全程单帧直通无分片
 
-## 7. E5:链路机制对照
+## 7. E5:链路机制对照 + 三平台快测(当日补测)
 
-本项目 4 链全 kernel_datapath,无 relay 链,**relay 的 UDP 65507 载荷约束未覆盖**(如需:在无 kernel 服务器建同构场补测)。
+### E5a:relay×jumbo —— 无载体,不可测(环境已演进)
+
+本项目 4 链全 kernel_datapath。原计划借 IOL-XE 的 relay 链补测,但实测 `iol-docker-test` 场:12 条 IOL(IOL-XE/IOL-L2 docker)链**全部 kernel_datapath=true**——当前服务器(23f117de5)上 IOL 的 unix-socket NIO 链已全部 kernel 化,10-01"恒 relay"旧结论作废。relay 链仅存 VPCS↔docker 两条,VPCS 为 1500 固定 MTU 轻量栈、无大包能力 ⇒ **relay×jumbo 在当前环境无高 MTU 载体,不可构造**。uBridge UDP 载荷 65507 对 9000 帧理论上无碍(推断,未实测)。
+
+### E5b:IOU / IOL-XE / Dynamips 三平台 jumbo 支持快测(全实测)
+
+| 平台 | 操作 | 结果 |
+|---|---|---|
+| IOL-XE 17-18-02(iol-docker-test R1/R2,e0/0 直连) | `interface e0/0` + `mtu 9000` | **`% Interface Ethernet0/0 does not support user settable mtu.`** |
+| IOU L3 adventerprisek9(IOU 场 IOU-R-1/2,e0/0 直连) | 同上 | **一字不差同样拒绝**(IOL 家族同根驱动) |
+| Dynamips c7200 15.2(7200 场 R1/R2,f1/0=PA-FE-TX 直连) | `interface fa1/0` + `mtu 9000` | **语法层 `Invalid input`**(真机语义:FE 卡无 jumbo;要测须换 PA-GE,9216 上限) |
+
+**结论:Cisco 仿真三平台(IOU/IOL-XE/c7200-FE)全部不支持巨型帧——jumbo 实验的载体只有 Linux 系(qemu/docker/veth/tap)。** 跨平台链路层(宿主 tap/桥)结论与节点类型无关,已由本场闭环,无需重测。
+
+快测成本:IOL-XE/IOU 各 ~2 分钟(docker/IOU 启动快+配置即拒),Dynamips ~4 分钟(boot 慢);三场用后即停、已 close 还原。
 
 ## 8. 持久化方案(已验证重启生效)
 
@@ -115,4 +129,4 @@ H1(UDG) ──10.9.1.0/24── R1(FRR-qemu/virtio) ──10.9.12.0/31── R2(
 
 ## 11. 结论一句话
 
-巨型帧在 GNS3 qemu(kernel-datapath virtio 链)上全档位端到端可用:9000 档对 qemu 转发吞吐 ×4.4(4.2→18.3G);链路 MTU 名义顶=宿主 tap 65521,实测 65522 仍通(桥不按 MTU 拦帧);Linux 转发只查出口 MTU,入口收窄无感;OSPF MTU 失配卡 ExStart 的小端 mtu-ignore 秒修;PMTU 锁有 600s 粘性,修路径后需 flush cache。
+巨型帧在 GNS3 qemu(kernel-datapath virtio 链)上全档位端到端可用:9000 档对 qemu 转发吞吐 ×4.4(4.2→18.3G);链路 MTU 名义顶=宿主 tap 65521,实测 65522 仍通(桥不按 MTU 拦帧);Linux 转发只查出口 MTU,入口收窄无感;OSPF MTU 失配卡 ExStart 的小端 mtu-ignore 秒修;PMTU 锁有 600s 粘性,修路径后需 flush cache;**IOU/IOL-XE/c7200-FE 三平台全部不支持 jumbo(mtu 命令直接拒绝),巨型帧实验载体只有 Linux 系节点**。
