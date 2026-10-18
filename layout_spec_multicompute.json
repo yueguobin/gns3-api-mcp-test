@@ -1,0 +1,30 @@
+{
+  "project": "GNS3-Muilt-Compute",
+  "style": {
+    "pad": 6,
+    "shape_margin": 45,
+    "caption": {"dx": 8, "dy": 8},
+    "groups": {
+      "horz": {"rule": "perp", "gap": 10.0, "axis": "x"},
+      "vert": {"rule": "perp", "gap": 10.0, "axis": "y"},
+      "diag": {"rule": "perp", "gap": 10.0, "axis": "x"},
+      "diagR": {"rule": "offset", "offset": [151.0, 30.5], "axis": "x"}
+    }
+  },
+  "title": {"drawing_id": "d44283df-ea7d-49c7-b627-e635db786438", "x": -520, "y": -370, "w": 742, "h": 54},
+  "links": [
+    ["GNS3VM-1", "Switch1"],
+    ["GNS3VM-2", "Switch1"],
+    ["GNS3VM-3", "Switch1"],
+    ["GNS3VM-4", "Switch1"],
+    ["Switch1", "Cloud1"]
+  ],
+  "zones": [],
+  "link_labels": [
+    {"drawing_id": "1ed9b6e5-3e7d-4548-8af1-a3729c856d0b", "text": "192.168.101.21", "endpoints": ["GNS3VM-1", "Switch1"], "w": 182, "h": 25, "group": "horz"},
+    {"drawing_id": "22bd1a55-ccad-48e8-8d75-62f02c717700", "text": "192.168.101.22", "endpoints": ["GNS3VM-2", "Switch1"], "w": 182, "h": 25, "group": "diag"},
+    {"drawing_id": "1f553e0b-0ce8-4563-b727-e52d1e901df9", "text": "192.168.101.23", "endpoints": ["GNS3VM-3", "Switch1"], "w": 182, "h": 25, "group": "diagR"},
+    {"drawing_id": "9b7d759f-28ae-4457-b093-3825e62d7694", "text": "192.168.101.24", "endpoints": ["Switch1", "GNS3VM-4"], "w": 182, "h": 25, "group": "horz"},
+    {"drawing_id": "f9ac7b59-8e9d-43a1-8a2c-ba8841c9ba36", "text": "virbr2 · 宿主出口", "endpoints": ["Switch1", "Cloud1"], "w": 169, "h": 25, "group": "vert"}
+  ]
+}

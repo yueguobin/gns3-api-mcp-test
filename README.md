@@ -12,10 +12,30 @@ This repository contains the complete test documentation for the GNS3 API MCP Se
 ## Directory Structure
 
 ```
-mcp_test_docs/
-├── zh/    Chinese documentation (22 files)
-└── en/    English documentation (24 files)
+├── labs/               GNS3 lab records: topology test scenarios, measurements, and references (Chinese)
+├── mcp_test_docs/      MCP tool test documentation
+│   ├── zh/             Chinese documentation (22 files)
+│   └── en/             English documentation (24 files)
+├── mcp-manual-test/    Manual test scripts and scratch work
+├── deploy_ptp4l.py     Batch-deploy ptp4l time sync to GNS3 VMs (AppArmor-aware)
+├── multi_compute_deploy.py  Batch-deploy gns3-server wheel + ubridge to GNS3 VMs
+├── gns3_label_layout.py     Label layout algorithm library
+├── place_link_labels.py     CLI: place/update link labels on a GNS3 project
+└── layout_spec_*.json       Layout specs consumed by place_link_labels.py
 ```
+
+## Lab Records (`labs/`)
+
+Scenario build-outs with full verification trails, measurement campaigns, and reference manuals — packet filters (13 impairment types), kernel-datapath A/B comparisons across Docker/QEMU/Dynamips/IOU, jumbo frames, MTU black holes, MSTP/VRRP, BGP attributes, PIM-SM neighbor filtering, EVPN/VXLAN spine-leaf on FRR/SRL/XRd, the label-layout algorithm, and ptp4l clock sync for multi-compute captures. Filenames are self-describing; the 汇总 (summary) files index the per-lab records.
+
+## Root Utility Scripts
+
+| File | Description |
+|------|-------------|
+| [deploy_ptp4l.py](deploy_ptp4l.py) | Batch-deploy ptp4l to GNS3 VMs over SSH: software-timestamp PTP with BMCA, AppArmor minimal grant (`local/usr.sbin.ptp4l`), pmc-based verification (`--verify-only`) |
+| [multi_compute_deploy.py](multi_compute_deploy.py) | One-command deployment of the gns3-server wheel + ubridge to a fleet of GNS3 VMs |
+| [gns3_label_layout.py](gns3_label_layout.py) | Label collision-avoidance layout library — see [labs/GNS3-标注布局算法.md](labs/GNS3-标注布局算法.md) |
+| [place_link_labels.py](place_link_labels.py) | CLI around the library: compute placements for a topology and diff against live drawings (`--current`) |
 
 ## Test Stages
 
@@ -44,7 +64,7 @@ mcp_test_docs/
 
 | File | Description |
 |------|-------------|
-| [replicate_mesh.py](../mcp-manual-test/replicate_mesh.py) | Batch-replicate a router mesh (nodes + links) on a 225px grid via MCP — see [usage (en)](mcp_test_docs/en/replicate_mesh_usage_en.md) / [使用说明 (zh)](mcp_test_docs/zh/replicate_mesh使用说明.md) |
+| [replicate_mesh.py](mcp-manual-test/replicate_mesh.py) | Batch-replicate a router mesh (nodes + links) on a 225px grid via MCP — see [usage (en)](mcp_test_docs/en/replicate_mesh_usage_en.md) / [使用说明 (zh)](mcp_test_docs/zh/replicate_mesh使用说明.md) |
 
 ## Documentation Files
 

@@ -1,0 +1,49 @@
+{
+  "project": "vxlan-compute-test",
+  "style": {
+    "pad": 6,
+    "shape_margin": 45,
+    "caption": {"dx": 8, "dy": 8},
+    "groups": {
+      "diag": {"rule": "band", "band_ref": "FRR", "band_dy": 5.5, "min_gap": 200, "axis": "x"},
+      "mh":   {"rule": "offset", "offset": [17.5, 5.5], "axis": "x"},
+      "ah":   {"rule": "offset", "offset": [30.0, 5.5], "axis": "x"},
+      "av":   {"rule": "offset", "offset": [80.0, 17.5], "axis": "y"}
+    }
+  },
+  "title": {"drawing_id": "d51ebfc4-0cad-424b-9995-d09385e0ae40", "x": -208, "y": -430, "w": 852, "h": 54},
+  "links": [
+    ["FRRDocker-21", "FRRDocker-22"],
+    ["FRRDocker-21", "FRRDocker-23"],
+    ["FRRDocker-22", "FRRDocker-24"],
+    ["FRRDocker-23", "FRRDocker-24"],
+    ["FRRDocker-21", "FRRDocker-24"],
+    ["FRRDocker-22", "FRRDocker-23"],
+    ["Ubuntu-21", "FRRDocker-21"],
+    ["Ubuntu-24", "FRRDocker-24"],
+    ["Ubuntu-22", "FRRDocker-22"],
+    ["Ubuntu-23", "FRRDocker-23"]
+  ],
+  "zones": [
+    {"drawing_id": "cdcf60c6-629a-478d-8f22-4bb0bf326c30", "nodes": ["Ubuntu-21", "FRRDocker-21"], "color": "#5AA9DD",
+     "caption": {"drawing_id": "e35c1877-5a9c-4365-b024-197ce90daf9b", "w": 288, "h": 46}},
+    {"drawing_id": "09a5d3a0-a65d-45f2-8c59-92ddb717eba2", "nodes": ["Ubuntu-22", "FRRDocker-22"], "color": "#7BC67E",
+     "caption": {"drawing_id": "bf44ee4c-9e75-413d-ad80-cdad715fb21f", "w": 240, "h": 46}},
+    {"drawing_id": "fa9946d7-1a04-449b-8ecc-cf6bc627462a", "nodes": ["Ubuntu-23", "FRRDocker-23"], "color": "#E8B85C",
+     "caption": {"drawing_id": "4b665758-f9fb-4ad1-b6d9-665e93672457", "w": 240, "h": 46}},
+    {"drawing_id": "6a363a46-5e86-4f5c-bea1-102ddd7074db", "nodes": ["Ubuntu-24", "FRRDocker-24"], "color": "#C792DF",
+     "caption": {"drawing_id": "0bf469b7-8e0d-4979-ab5e-f1629ce883da", "w": 240, "h": 46}}
+  ],
+  "link_labels": [
+    {"drawing_id": "7946e309-c736-4a76-9513-f4b9d4e27a32", "text": "21.1.12.0/24", "endpoints": ["FRRDocker-21", "FRRDocker-22"], "w": 96, "h": 19, "group": "diag"},
+    {"drawing_id": "9ca1e3fc-5082-4d6d-b830-5754f5b207c4", "text": "21.1.13.0/24", "endpoints": ["FRRDocker-21", "FRRDocker-23"], "w": 96, "h": 19, "group": "diag"},
+    {"drawing_id": "d53d26d5-e1a3-40b4-8781-e13ccb39bf58", "text": "21.1.24.0/24", "endpoints": ["FRRDocker-22", "FRRDocker-24"], "w": 96, "h": 19, "group": "diag"},
+    {"drawing_id": "bec94f82-02fa-422b-9922-287104c55be0", "text": "21.1.34.0/24", "endpoints": ["FRRDocker-23", "FRRDocker-24"], "w": 96, "h": 19, "group": "diag"},
+    {"drawing_id": "1e61b51f-3378-416b-b36d-3f6bc09768e9", "text": "21.1.14.0/24", "endpoints": ["FRRDocker-21", "FRRDocker-24"], "w": 96, "h": 19, "group": "mh"},
+    {"drawing_id": "bebe35f1-c600-4bc9-aba2-e189f6f7dd30", "text": "21.1.23.0/24", "endpoints": ["FRRDocker-22", "FRRDocker-23"], "w": 96, "h": 19, "group": "mh"},
+    {"drawing_id": "bd837e0b-9789-4d98-8b70-5db6218c9f05", "text": "21.1.1.0/24 · area 21", "endpoints": ["Ubuntu-21", "FRRDocker-21"], "w": 168, "h": 19, "group": "ah"},
+    {"drawing_id": "62dcbc3c-834a-41a7-9e35-494dbce3fdbc", "text": "21.1.4.0/24 · area 24", "endpoints": ["Ubuntu-24", "FRRDocker-24"], "w": 168, "h": 19, "group": "ah"},
+    {"drawing_id": "556cda54-ed0c-4a02-ad2e-a0fa3ace86e2", "text": "21.1.2.0/24\narea 22", "endpoints": ["Ubuntu-22", "FRRDocker-22"], "w": 88, "h": 38, "group": "av"},
+    {"drawing_id": "9c48db2a-d5f2-4fa8-92ce-a262e574e110", "text": "21.1.3.0/24\narea 23", "endpoints": ["Ubuntu-23", "FRRDocker-23"], "w": 88, "h": 38, "group": "av"}
+  ]
+}
