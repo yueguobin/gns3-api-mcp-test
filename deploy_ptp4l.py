@@ -10,10 +10,13 @@
   1. 探测管理口（带 192.168.101.x 地址的接口）
   2. apt 安装 linuxptg（linuxptp，已装跳过；失败留 /tmp/ptp4l-apt.log）
   3. 停用抢时钟的服务: systemd-timesyncd / chrony / ntp（存在才动）+ timedatectl set-ntp false
-  4. AppArmor 解封: disable --now apparmor + 卸载 linuxptp 的 ptp4l/phc2sys profile
-     （Ubuntu 自带 profile 剥夺 CAP_SYS_TIME，ptp4l 拨钟 adjtimex 全部 EPERM）
+  4. AppArmor 保持启用 + 最小授权: 发行版 profile 按硬件时间戳架构编写、没给
+     capability sys_time（软件时间戳下 ptp4l 自己 adjtimex 拨钟 → 全 EPERM）。
+     走官方 local/usr.sbin.ptp4l 覆盖通道补 3 条规则，整机其余管控不动。
   5. 写 /etc/linuxptp/ptp4l-mgmt.conf + systemd 单元 ptp4l-mgmt.service
   6. enable --now，等 25s 后 pmc 读 portState / offsetFromMaster / gmIdentity
+     （pmc 能应答依赖步骤 4 的 unix 规则 + 步骤 6 的重启：服务 socket 必须
+       在新策略下重建，热替换 profile 对已建 socket 无效）
 
 4 台跑同一配置，BMCA 自动选主（同优先级比 clockIdentity）；从钟的 offsetFromMaster
 即"相对主钟偏差"，全体 |offset| 的最大值就是两两钟差的上界。重复执行=覆盖重启，幂等。
@@ -95,19 +98,44 @@ done
 s timedatectl set-ntp false >/dev/null 2>&1 || true
 step timesync OK
 
-# 4. AppArmor 解封: Ubuntu 的 linuxptp profile 剥夺 CAP_SYS_TIME，ptp4l 调 adjtimex
-#    全部 EPERM（且被 confinement 的 ptp4l 连 UDS 上 pmc 的请求都不应答）。
-#    disable --now 只防开机加载；内核里已加载的必须显式 apparmor_parser -R 卸载。
-s systemctl disable --now apparmor >/dev/null 2>&1
-s mkdir -p /etc/apparmor.d/disable
+# 4. AppArmor 保持启用，给 ptp4l 最小授权（发行版官方 local 覆盖通道，升级安全）。
+#    实测三件套缺一不可:
+#    a) capability sys_time —— 发行版 profile 按"硬件时间戳"架构写（拨钟归 phc2sys），
+#       软件时间戳下 ptp4l 自己 adjtimex，没这条全 EPERM、伺服永远 s0；
+#    b) @{run}/pmc.* 路径 + unix dgram 规则 —— pmc 走 UDS 时客户端 socket 绑
+#       /run/pmc.<pid>，ptp4l 回包 sendmsg 被拒（审计显示 class="file" 但纯文件
+#       规则拦不住，aa-exec 实测 open 放行、sendmsg 仍拒，必须配套 unix 规则）；
+#    c) 装完必须重启 ptp4l —— 服务 socket 要在新策略下重建（本脚本步骤 6 本来就
+#       restart，热替换 profile 对已建 socket 无效）。
+#    另兼容旧版脚本曾整机禁用的现场: 摘 disable 软链 + 重新 enable/start apparmor。
+cat > /tmp/ptp4l.local <<'AAEOF'
+# GNS3VM ptp4l 以软件时间戳运行，需直接 adjtimex 校系统钟。
+# 发行版 profile 按"硬件时间戳"架构编写（拨钟归 phc2sys，那边才有 sys_time），
+# 此处按 local/README 机制补授——升级安全。
+capability sys_time,
+# pmc 经 UDS 查询：客户端 socket 绑 /run/pmc.<pid>。sendmsg 中介虽然审计显示
+# class="file"，但单纯文件路径规则拦不住，需配套 unix 细粒度规则；且必须重启
+# ptp4l 让服务 socket 在新策略下重建（热替换 profile 对已建 socket 无效）。
+@{run}/pmc.[0-9]* rw,
+unix (create, bind, connect, send, receive, getattr) type=dgram,
+AAEOF
+if [ -f /etc/apparmor.d/usr.sbin.ptp4l ]; then
+  s mkdir -p /etc/apparmor.d/local
+  s install -m 0644 /tmp/ptp4l.local /etc/apparmor.d/local/usr.sbin.ptp4l
+  step apparmor OK
+  info apparmor-mode "enforce+local-override"
+else
+  step apparmor SKIP
+  info apparmor-mode "无发行版 profile，unconfined"
+fi
+# 兼容清理: 摘掉历史禁用软链、恢复 AppArmor 出厂管控，再跳缓存重载这两个 profile
+s rm -f /etc/apparmor.d/disable/usr.sbin.ptp4l /etc/apparmor.d/disable/usr.sbin.phc2sys
+s systemctl enable apparmor >/dev/null 2>&1
+s systemctl start apparmor >/dev/null 2>&1
+info aa-active "$(systemctl is-active apparmor 2>/dev/null)"
 for pf in usr.sbin.ptp4l usr.sbin.phc2sys; do
-  if [ -f /etc/apparmor.d/$pf ]; then
-    s ln -sf /etc/apparmor.d/$pf /etc/apparmor.d/disable/$pf
-    s apparmor_parser -R /etc/apparmor.d/$pf >/dev/null 2>&1
-    info apparmor-off "$pf"
-  fi
+  [ -f /etc/apparmor.d/$pf ] && s apparmor_parser -r --skip-read-cache /etc/apparmor.d/$pf >/dev/null 2>&1
 done
-step apparmor OK
 
 # 5. 写配置 + systemd 单元
 cat > /tmp/ptp4l-mgmt.conf <<'PTPEOF'
