@@ -37,7 +37,7 @@
 
 | # | 场景 | 结果 | 备注 |
 |---|---|---|---|
-| 8 | exec/send on console_type=docker_exec | **✗ F1** | **回归**。两种形态：全新启动即 docker_exec → `Connection refused`；telnet→docker_exec 翻转后 → `Command execution failed: telnet connection closed`（错误文案自述 telnet 驱动）。同节点切回 telnet 一切正常 ⇒ 节点健康、传输路径坏。**92bc5f2dd 时代实测通（tty=/dev/pts/2）**。推断（非实测）：新代码把 docker_exec 误映射到 telnet 驱动去连 TCP 5001（docker_exec 无 TCP 监听者） |
+| 8 | exec/send on console_type=docker_exec | **✗ F1** | **回归**。两种形态：全新启动即 docker_exec → `Connection refused`；telnet→docker_exec 翻转后 → `Command execution failed: telnet connection closed`（错误文案自述 telnet 驱动）。同节点切回 telnet 一切正常 ⇒ 节点健康、传输路径坏。**92bc5f2dd 时代实测通（tty=/dev/pts/2）**。推断（非实测）：新代码把 docker_exec 误映射到 telnet 驱动去连 TCP 5001（docker_exec 无 TCP 监听者）。**定性更新见 §6 勘误：docker_exec 设计人群=SRL/XRd 类镜像，Ubuntu+docker_exec 属边缘组合** |
 
 ### 1.4 send / read 语义
 
@@ -88,7 +88,7 @@
 
 | 编号 | 级别 | 内容 | 对照基线 |
 |---|---|---|---|
-| **F1** | ✗ 回归 | docker_exec 传输被 telnet 驱动接管（refused / telnet connection closed 两形态），同节点 telnet 正常 | 92bc5f2dd 实测通 |
+| **F1** | ✗ 回归（边缘路径，见 §6 勘误降级） | docker_exec 传输被 telnet 驱动接管（refused / telnet connection closed 两形态），同节点 telnet 正常 | 92bc5f2dd 实测通 |
 | **F3** | ✗ 回归 | QEMU 串口 getty 自动登录损坏：无凭据 telnet 挂死/ssh 干净报错（形态不一致）；有凭据 Login incorrect（手工同凭据成功） | 92bc5f2dd 双传输全通 |
 | **F4** | ✗ 未修 | 登出后缓存会话竞速干等（92bc5f2dd 已知边界原样），恢复仍靠 close | 已知未修项，非本轮引入 |
 | **F2** | ⚠️ 注意 | 裸 `\r` 单发偶发被转义成字面 `\r`（调用链层，非确定性；复合发送不受影响） | 新发现 |
@@ -102,13 +102,25 @@
 
 - Console：24 场景 = **19 通过 + 1 注意（F2）+ 3 回归/未修场景（F1/F3/F4）+ 毛边 1**
 - Device：9 场景 = **7 通过 + 2 通过但注意**
-- 修复建议优先级：F3（登录 dance，阻断 QEMU 全自动链路）> F1（docker_exec，三传输缺一）> F4（登出边界，人工 close 可绕）> 文案毛边
+- 修复建议优先级：F3（登录 dance，阻断 QEMU 全自动链路）> F4（登出边界，人工 close 可绕）> F1（§6 勘误后降级：仅 shell 型 docker_exec 边缘路径受影响，正式人群走 device 工具线）> 文案毛边
 - 测试痕迹：临时项目已删，project_list 终态 3 个既有项目、无新增残留
 
 ## 5. 给下一轮的复测清单（F1/F3/F4 修复后）
 
-1. docker_exec 全路径：全新启动即 docker_exec + telnet↔docker_exec 双向翻转
+1. docker_exec（按 §6 勘误重新定界）：正式人群=SRL/XRd 类 appliance（GNS3_CONSOLE_CMD 落 NOS CLI、自带 netmiko_device_type → **该走 device 工具线**，console 工具按家族门槛会拒）；shell 型 docker_exec（GNS3_CONSOLE_CMD=bash 或裸 docker_exec）是否保留 console 工具支持属产品决策，若保留则测全新启动+翻转两形态
 2. QEMU getty 自动登录：无凭据（telnet 应与 ssh 同样快速失败）/ 有凭据（应登录成功）/ 首启 boot 中 exec（登录段超时应关会话）
 3. 登出边界：登出→exec 应自动重登录或快速失败，不再 60-90s 干等
 4. MOTD "Last login:" 劫持回归（92bc5f2dd 修复）——本轮被 F3 阻断未验
 5. docker 方向 identity 争用（本轮被 F1 遮蔽）
+
+## 6. 勘误：docker_exec 的设计人群（10-31 晚，用户指正 + appliance 定义佐证）
+
+用户指正 docker_exec 只有 XRd / SR Linux 之类的镜像使用，普通 docker（Ubuntu/FRR）用 telnet/ssh。经 appliance 定义核实**成立**（实测 appliance_get）：
+
+- **SRLinux**（builtin，appliance_id ffa79bec）：docker 模板 `console_type: "docker_exec"`，环境变量 `GNS3_CONSOLE_CMD=/opt/srlinux/bin/sr_cli`，描述明言 console 经 docker_exec 直落 sr_cli TUI；模板自带 `netmiko_device_type: nokia_sros_telnet`
+- **XRd Control Plane**（builtin，e4a3a5fe）：同 `console_type: "docker_exec"` + `GNS3_CONSOLE_CMD=/pkg/bin/xr_cli.sh`；自带 `netmiko_device_type: cisco_xr_telnet`
+- 常规 docker 镜像（Ubuntu Docker Guest / FRR / FRRDockerLite / cEOS / Alpine / PyATS / Toolbox 等）**全部 `console_type: telnet`**
+
+**对 F1 的影响**：docker_exec 的承载是 `docker exec` 起 GNS3_CONSOLE_CMD（无 TCP console 端口，node_console 走 ws 端点），console 工具的 telnet 驱动连 TCP 自然 refused/closed——根因解释比"误映射"更完整。正式人群（SRL/XRd）的 console 落的是 **NOS CLI 且 appliance 自带 netmiko 判型**，正确工具是 device_config_send/device_show_run，console 工具（Linux-only 家族门槛）本来就会拒它们 ⇒ F1 从"三传输回归"**降级为"边缘路径失效"**：受影响的只剩 shell 型 docker_exec（如 10-30 测的 Ubuntu+docker_exec 组合，即 GNS3_CONSOLE_CMD 未设/设 bash 的场景）。是否继续支持该组合属产品决策；本报告 §1.3 的实测事实（曾通、今坏）不变。
+
+另：本轮 FRRDocker-1 全程 telnet + cisco_ios_telnet，未对 FRR 使用 docker_exec。
