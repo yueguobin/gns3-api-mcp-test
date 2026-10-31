@@ -88,7 +88,7 @@
 
 | 编号 | 级别 | 内容 | 对照基线 |
 |---|---|---|---|
-| **F1** | ✗ 回归（边缘路径，见 §6 勘误降级） | docker_exec 传输被 telnet 驱动接管（refused / telnet connection closed 两形态），同节点 telnet 正常 | 92bc5f2dd 实测通 |
+| **F1** | ✗ 回归（§7 正确用法复刻实证：**server 侧传输端到端断**，非用法问题） | docker_exec 传输三层全断：console 工具 refused/closed、device 工具 netmiko 失败 ×2、**ws console 本身零输出（纯 server 路径，不经 MCP）**；telnet 对照组同姿势全活 | 92bc5f2dd console 工具实测通 |
 | **F3** | ✗ 回归 | QEMU 串口 getty 自动登录损坏：无凭据 telnet 挂死/ssh 干净报错（形态不一致）；有凭据 Login incorrect（手工同凭据成功） | 92bc5f2dd 双传输全通 |
 | **F4** | ✗ 未修 | 登出后缓存会话竞速干等（92bc5f2dd 已知边界原样），恢复仍靠 close | 已知未修项，非本轮引入 |
 | **F2** | ⚠️ 注意 | 裸 `\r` 单发偶发被转义成字面 `\r`（调用链层，非确定性；复合发送不受影响） | 新发现 |
@@ -102,12 +102,12 @@
 
 - Console：24 场景 = **19 通过 + 1 注意（F2）+ 3 回归/未修场景（F1/F3/F4）+ 毛边 1**
 - Device：9 场景 = **7 通过 + 2 通过但注意**
-- 修复建议优先级：F3（登录 dance，阻断 QEMU 全自动链路）> F4（登出边界，人工 close 可绕）> F1（§6 勘误后降级：仅 shell 型 docker_exec 边缘路径受影响，正式人群走 device 工具线）> 文案毛边
+- 修复建议优先级：F3（登录 dance，阻断 QEMU 全自动链路）> F4（登出边界，人工 close 可绕）> F1（**server 侧 docker_exec 传输断，见 §7**——当前环境 15 个在册 docker 镜像全是 telnet 型无人受影响，但 SRL/XRd 启用前必修）> 文案毛边
 - 测试痕迹：临时项目已删，project_list 终态 3 个既有项目、无新增残留
 
 ## 5. 给下一轮的复测清单（F1/F3/F4 修复后）
 
-1. docker_exec（按 §6 勘误重新定界）：正式人群=SRL/XRd 类 appliance（GNS3_CONSOLE_CMD 落 NOS CLI、自带 netmiko_device_type → **该走 device 工具线**，console 工具按家族门槛会拒）；shell 型 docker_exec（GNS3_CONSOLE_CMD=bash 或裸 docker_exec）是否保留 console 工具支持属产品决策，若保留则测全新启动+翻转两形态
+1. docker_exec（§7 定位=server 侧传输断）：server 修复后按序复测 ① ws console 有输出（websocat 对照法）② device 工具通（正确用法主路）③ console 工具（shell 型组合，是否保留属产品决策）；原生 SRLinux appliance 到镜像后整链路复测
 2. QEMU getty 自动登录：无凭据（telnet 应与 ssh 同样快速失败）/ 有凭据（应登录成功）/ 首启 boot 中 exec（登录段超时应关会话）
 3. 登出边界：登出→exec 应自动重登录或快速失败，不再 60-90s 干等
 4. MOTD "Last login:" 劫持回归（92bc5f2dd 修复）——本轮被 F3 阻断未验
@@ -121,6 +121,28 @@
 - **XRd Control Plane**（builtin，e4a3a5fe）：同 `console_type: "docker_exec"` + `GNS3_CONSOLE_CMD=/pkg/bin/xr_cli.sh`；自带 `netmiko_device_type: cisco_xr_telnet`
 - 常规 docker 镜像（Ubuntu Docker Guest / FRR / FRRDockerLite / cEOS / Alpine / PyATS / Toolbox 等）**全部 `console_type: telnet`**
 
-**对 F1 的影响**：docker_exec 的承载是 `docker exec` 起 GNS3_CONSOLE_CMD（无 TCP console 端口，node_console 走 ws 端点），console 工具的 telnet 驱动连 TCP 自然 refused/closed——根因解释比"误映射"更完整。正式人群（SRL/XRd）的 console 落的是 **NOS CLI 且 appliance 自带 netmiko 判型**，正确工具是 device_config_send/device_show_run，console 工具（Linux-only 家族门槛）本来就会拒它们 ⇒ F1 从"三传输回归"**降级为"边缘路径失效"**：受影响的只剩 shell 型 docker_exec（如 10-30 测的 Ubuntu+docker_exec 组合，即 GNS3_CONSOLE_CMD 未设/设 bash 的场景）。是否继续支持该组合属产品决策；本报告 §1.3 的实测事实（曾通、今坏）不变。
+**对 F1 的影响**：docker_exec 的承载是 `docker exec` 起 GNS3_CONSOLE_CMD（无 TCP console 端口，node_console 走 ws 端点），console 工具的 telnet 驱动连 TCP 自然 refused/closed——根因解释比"误映射"更完整。正式人群（SRL/XRd）的 console 落的是 **NOS CLI 且 appliance 自带 netmiko 判型**，正确工具是 device_config_send/device_show_run，console 工具（Linux-only 家族门槛）本来就会拒它们 ⇒ F1 一度降级为"边缘路径失效"。**但 §7 追加实证推翻了降级：正确用法（device 工具）同样断，且 ws console（纯 server 路径）本身零输出——问题在 server 侧传输，非用法。**
 
 另：本轮 FRRDocker-1 全程 telnet + cisco_ios_telnet，未对 FRR 使用 docker_exec。
+
+## 7. 追加实证：正确用法下 docker_exec 仍断，问题在 server 侧传输（10-31 深夜，接 §6）
+
+用户追问"没有正确使用还算问题吗"后做的鉴别实验（探针项目 DockerExec-SRL-Probe-1031，已删；SRLinux appliance 装后模板已删）。
+
+**复刻方法**（原生 srlinux/xrd 镜像不在 compute 上——在册 15 个 docker 镜像全是 telnet 型，无法起真 appliance；改用 gns3/frr 逐项复刻 appliance 定义的机制，机制本身与镜像无关——此句为推断，标注）：节点 console_type=docker_exec + `properties.environment` 注入 `GNS3_CONSOLE_CMD=/usr/bin/vtysh`（后换 `/bin/bash`）+ netmiko_device_type=cisco_ios_telnet —— 与 SRLinux/XRd appliance 的"docker exec 起 GNS3_CONSOLE_CMD 落 NOS CLI、自带判型走 device 工具"完全同构。
+
+**结果矩阵（全实测）**：
+
+| 探针 | 结果 |
+|---|---|
+| device_show_run（正确用法该走的路）`show version` | ✗ `netmiko_multiline (failed)` ×2（非白名单拒收——同错误形态对比 reload 拒收可辨，这是连接层失败） |
+| websocat → node_console 发的 ws console 端点（**纯 server 路径，不经 MCP**），GNS3_CONSOLE_CMD=vtysh | ✗ 连接建立、12s 零输出（单次新 token） |
+| 同上，GNS3_CONSOLE_CMD=/bin/bash（必然存在的路径） | ✗ 仍零输出 —— 排除命令路径问题 |
+| 对照组：同姿势 websocat → telnet console 节点 | ✓ bash 提示符 + `WS_PROBE_OK` 执行回显 |
+
+**结论**：docker_exec console 传输在 **server 侧（gns3server 3.1.0.dev8+862b78a4f）端到端断**——ws console 连必然存在的 /bin/bash 都起不来，不是"用法不标准"（§6 勘误的方向对，但修过头了：正确用法同样断）。console 工具（refused/closed）、device 工具（netmiko 失败）两层失败均为该传输断的下游表现。**影响面**：当前环境无任何 docker_exec 在用节点，实际无人受影响；SRL/XRd 启用前必修。原生 SRLinux 复测待镜像到位后补。
+
+**附带发现（本轮探针产生）**：
+- `appliance_install` 只建模板不拉镜像（设计如此）；缺镜像时 `node_create` 吐**裸错**（无 "missing image" 文案、无 status 契约）——错误契约毛边 +1
+- `node_update` 平铺 `environment` kwarg 被**静默忽略**，须 `properties` 嵌套才生效——易踩
+- 阶段31 记录的"docker 镜像 11 个含 srlinux/xrd"已过时：现 15 个、无 srlinux/xrd
