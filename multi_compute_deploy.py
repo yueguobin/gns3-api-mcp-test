@@ -6,10 +6,13 @@
   ./multi_compute_deploy.py -H "192.168.101.21"              # 只提示输密码
   ./multi_compute_deploy.py -H "192.168.101.20-25,vm1.corp" -u gns3 -p 'xxx'
   ./multi_compute_deploy.py -H ... --ubridge-branch feature/capture-multi   # 指定分支(默认用仓库当前状态)
+  ./multi_compute_deploy.py -H ... --no-ai-features   # 只装 server 本体，不装 AI/MCP 依赖
 
 固定流程（与你手工步骤一一对应）:
   1. 进入 gns3-server 仓库 → pip wheel → /tmp/auto_gw/
-  2. 上传 wheel 到各 VM → 进 venv 执行 pip install --force-reinstall --no-deps
+  2. 上传 wheel + ai/mcp requirements 到各 VM → 进 venv 执行
+     pip install --force-reinstall --no-deps（server 本体）
+     pip install -r ai-requirements.txt -r mcp-requirements.txt（ai-features 依赖）
   3. 进入 ubridge 仓库 → 打包源码 → /tmp/ubridge.tar
   4. 上传到各 VM → 解压 → make / make install → which 验证
   5. 重启 gns3 服务并确认 active
@@ -41,6 +44,8 @@ DEFAULT_UBRIDGE_REPO = os.path.expanduser("~/myCode/GNS3/ubridge")
 DEFAULT_VENV = "/home/gns3/.venv/gns3server-venv"
 GW_DIR = "/tmp/auto_gw"
 UB_TAR = "/tmp/ubridge.tar"
+# pyproject.toml: ai-features = {file = ['ai-requirements.txt', 'mcp-requirements.txt']}
+AI_REQ_FILES = ("ai-requirements.txt", "mcp-requirements.txt")
 
 REMOTE_SCRIPT = r"""
 set -u
@@ -48,6 +53,7 @@ PW=__PW__
 VENV_DEF=__VENV__
 WHEEL=__WHEEL__
 DO_SERVER=__DO_SERVER__
+DO_AI=__DO_AI__
 DO_UBRIDGE=__DO_UBRIDGE__
 DO_RESTART=__DO_RESTART__
 SUDO=sudo
@@ -63,6 +69,7 @@ if [ ! -x "$VENV/bin/pip" ]; then
 fi
 info venv "$VENV"
 
+SERVER_OK=0
 if [ "$DO_SERVER" = 1 ]; then
   if [ ! -x "$VENV/bin/pip" ]; then
     step server FAIL
@@ -70,10 +77,29 @@ if [ "$DO_SERVER" = 1 ]; then
   elif "$VENV/bin/pip" install --force-reinstall --no-deps "/tmp/$WHEEL" >/tmp/deploy-pip.log 2>&1; then
     VER=$("$VENV/bin/pip" show gns3-server 2>/dev/null | sed -n 's/^Version:[[:space:]]*//p')
     info server-version "${VER:-unknown}"
+    SERVER_OK=1
     step server OK
   else
     step server FAIL
     info server-log "$(tail -n 5 /tmp/deploy-pip.log 2>/dev/null | tr '\n' ' ')"
+  fi
+fi
+
+if [ "$SERVER_OK" = 1 ] && [ "$DO_AI" = 1 ]; then
+  if [ ! -f /tmp/ai-requirements.txt ] || [ ! -f /tmp/mcp-requirements.txt ]; then
+    step ai FAIL
+    info ai-log "requirements 未上传: /tmp/ai-requirements.txt /tmp/mcp-requirements.txt"
+  elif "$VENV/bin/pip" install -r /tmp/ai-requirements.txt -r /tmp/mcp-requirements.txt >/tmp/deploy-pip-ai.log 2>&1; then
+    if MCVER=$("$VENV/bin/python" -c 'import mcp, netmiko; print(getattr(mcp, "__version__", "unknown"))' 2>/dev/null); then
+      info ai-mcp "${MCVER:-unknown}"
+      step ai OK
+    else
+      info ai-mcp "import mcp/netmiko failed"
+      step ai FAIL
+    fi
+  else
+    step ai FAIL
+    info ai-log "$(tail -n 5 /tmp/deploy-pip-ai.log 2>/dev/null | tr '\n' ' ')"
   fi
 fi
 
@@ -253,7 +279,17 @@ def build_local(args):
         info["wheel_ver"] = m.group(2) if m else "?"
         info["server_src"] = run("git log -1 --format='%h %s'", cwd=args.server_repo).strip()
         info["server_dirty"] = "工作树有未提交改动" if run("git status --porcelain", cwd=args.server_repo).strip() else "工作树干净"
+        if args.ai_features:
+            reqs = []
+            for name in AI_REQ_FILES:
+                path = os.path.join(args.server_repo, name)
+                if not os.path.isfile(path):
+                    raise SystemExit(f"找不到 {path}（ai-features 依赖清单）")
+                reqs.append(path)
+            info["ai_reqs"] = reqs
         print(f"  wheel → {GW_DIR}/{info['wheel']}  （{info['server_src']}，{info['server_dirty']}）")
+        if args.ai_features:
+            print(f"  ai    → {', '.join(AI_REQ_FILES)}  （ai-features 依赖）")
 
     if do_ubridge:
         if args.ubridge_branch:
@@ -277,6 +313,7 @@ def render_remote(args, password, wheel):
         ("__VENV__", shlex.quote(args.venv)),
         ("__WHEEL__", shlex.quote(wheel or "none.whl")),
         ("__DO_SERVER__", "1" if args.only in ("both", "server") else "0"),
+        ("__DO_AI__", "1" if args.only in ("both", "server") and args.ai_features else "0"),
         ("__DO_UBRIDGE__", "1" if args.only in ("both", "ubridge") else "0"),
         ("__DO_RESTART__", "0" if args.no_restart else "1"),
     ]:
@@ -335,6 +372,8 @@ def main():
     ap.add_argument("--port", type=int, default=22)
     ap.add_argument("--only", choices=["both", "server", "ubridge"], default="both",
                     help="只部署其中一项（默认两项都做）")
+    ap.add_argument("--no-ai-features", dest="ai_features", action="store_false",
+                    help="不安装 ai-features 依赖（AI Copilot / MCP，默认安装）")
     ap.add_argument("--server-branch", help="gns3-server 打包前 checkout 的分支（默认不动，用当前状态）")
     ap.add_argument("--ubridge-branch", help="ubridge 用 git archive 打该分支（默认不打分支=当前工作树打包）")
     ap.add_argument("--server-repo", default=DEFAULT_SERVER_REPO)
@@ -376,6 +415,8 @@ def main():
     uploads = []
     if info.get("wheel"):
         uploads.append(f"{GW_DIR}/{info['wheel']}")
+    if args.only in ("both", "server") and args.ai_features:
+        uploads.extend(info.get("ai_reqs", []))
     if args.only in ("both", "ubridge"):
         uploads.append(UB_TAR)
     script = render_remote(args, password, info.get("wheel"))
@@ -403,9 +444,14 @@ def main():
             s_col = "skip"
         else:
             s_col = stage(r, ["server"])
+            ai_col = stage(r, ["ai"]) if args.ai_features else "skip"
             if s_col == "OK":
                 v = r["info"].get("server-version", "?")
                 s_col = f"OK {v}" + ("" if v == info.get("wheel_ver") else f" ≠本地{info['wheel_ver']}")
+                if ai_col != "skip":
+                    s_col += " +AI" if ai_col == "OK" else f" AI:{ai_col}"
+            elif ai_col != "skip":
+                s_col += f" AI:{ai_col}"
         if args.only == "server":
             u_col = "skip"
         else:
@@ -417,12 +463,13 @@ def main():
         else:
             svc = r["info"].get("service", r["steps"].get("restart", "FAIL"))
         print(f"{h:<20}{s_col:<24}{u_col:<20}{svc:<10}")
-        for k in ("venv", "which", "md5", "server-reason", "server-log", "apt-log", "make-log", "inst-log", "journal"):
+        for k in ("venv", "which", "md5", "server-reason", "server-log", "ai-log", "ai-mcp",
+                  "apt-log", "make-log", "inst-log", "journal"):
             if k in r["info"]:
                 print(f"{'':<20}· {k}: {r['info'][k][:120]}")
         if r["error"]:
             print(f"{'':<20}! {r['error']}")
-        ok = s_col in ("skip",) or s_col.startswith("OK")
+        ok = s_col in ("skip",) or (s_col.startswith("OK") and "FAIL" not in s_col)
         ok = ok and (u_col in ("skip",) or (u_col.startswith("OK") and "FAIL" not in u_col))
         ok = ok and (svc in ("skip", "active"))
         all_ok = all_ok and ok and not r["error"]
