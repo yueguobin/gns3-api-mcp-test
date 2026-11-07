@@ -7,6 +7,7 @@
   ./multi_compute_deploy.py -H "192.168.101.20-25,vm1.corp" -u gns3 -p 'xxx'
   ./multi_compute_deploy.py -H ... --ubridge-branch feature/capture-multi   # 指定分支(默认用仓库当前状态)
   ./multi_compute_deploy.py -H ... --no-ai-features   # 只装 server 本体，不装 AI/MCP 依赖
+  ./multi_compute_deploy.py -H ... --pip-index https://pypi.org/simple   # ai 依赖直连官方源(默认阿里源)
 
 固定流程（与你手工步骤一一对应）:
   1. 进入 gns3-server 仓库 → pip wheel → /tmp/auto_gw/
@@ -46,6 +47,9 @@ GW_DIR = "/tmp/auto_gw"
 UB_TAR = "/tmp/ubridge.tar"
 # pyproject.toml: ai-features = {file = ['ai-requirements.txt', 'mcp-requirements.txt']}
 AI_REQ_FILES = ("ai-requirements.txt", "mcp-requirements.txt")
+# VM 直连 pypi.org 国际链路仅几 KB/s 且中途停滞，langgraph 224KB 索引页拉不完即 "from versions: none"
+# （2026-11-07 实测：同 VM 到国内镜像 0.4s 全量拉完，宿主直连官方源正常）；传 '' 可退回官方源
+DEFAULT_PIP_INDEX = "https://mirrors.aliyun.com/pypi/simple/"
 
 REMOTE_SCRIPT = r"""
 set -u
@@ -56,6 +60,7 @@ DO_SERVER=__DO_SERVER__
 DO_AI=__DO_AI__
 DO_UBRIDGE=__DO_UBRIDGE__
 DO_RESTART=__DO_RESTART__
+PINDEX=__PINDEX__
 SUDO=sudo
 [ "$(id -un)" = root ] && SUDO=""
 s() { if [ -n "$SUDO" ]; then printf '%s\n' "$PW" | "$SUDO" -S -p '' "$@"; else "$@"; fi; }
@@ -89,17 +94,22 @@ if [ "$SERVER_OK" = 1 ] && [ "$DO_AI" = 1 ]; then
   if [ ! -f /tmp/ai-requirements.txt ] || [ ! -f /tmp/mcp-requirements.txt ]; then
     step ai FAIL
     info ai-log "requirements 未上传: /tmp/ai-requirements.txt /tmp/mcp-requirements.txt"
-  elif "$VENV/bin/pip" install -r /tmp/ai-requirements.txt -r /tmp/mcp-requirements.txt >/tmp/deploy-pip-ai.log 2>&1; then
-    if MCVER=$("$VENV/bin/python" -c 'import mcp, netmiko; print(getattr(mcp, "__version__", "unknown"))' 2>/dev/null); then
-      info ai-mcp "${MCVER:-unknown}"
-      step ai OK
-    else
-      info ai-mcp "import mcp/netmiko failed"
-      step ai FAIL
-    fi
   else
-    step ai FAIL
-    info ai-log "$(tail -n 5 /tmp/deploy-pip-ai.log 2>/dev/null | tr '\n' ' ')"
+    AI_IDX=()
+    [ -n "$PINDEX" ] && AI_IDX+=(-i "$PINDEX")
+    info ai-index "${PINDEX:-官方源}"
+    if "$VENV/bin/pip" install -r /tmp/ai-requirements.txt -r /tmp/mcp-requirements.txt "${AI_IDX[@]}" >/tmp/deploy-pip-ai.log 2>&1; then
+      if MCVER=$("$VENV/bin/python" -c 'import mcp, netmiko; print(getattr(mcp, "__version__", "unknown"))' 2>/dev/null); then
+        info ai-mcp "${MCVER:-unknown}"
+        step ai OK
+      else
+        info ai-mcp "import mcp/netmiko failed"
+        step ai FAIL
+      fi
+    else
+      step ai FAIL
+      info ai-log "$(tail -n 5 /tmp/deploy-pip-ai.log 2>/dev/null | tr '\n' ' ')"
+    fi
   fi
 fi
 
@@ -316,6 +326,7 @@ def render_remote(args, password, wheel):
         ("__DO_AI__", "1" if args.only in ("both", "server") and args.ai_features else "0"),
         ("__DO_UBRIDGE__", "1" if args.only in ("both", "ubridge") else "0"),
         ("__DO_RESTART__", "0" if args.no_restart else "1"),
+        ("__PINDEX__", shlex.quote(getattr(args, "pip_index", "") or "")),
     ]:
         s = s.replace(ph, val)
     return s
@@ -374,6 +385,8 @@ def main():
                     help="只部署其中一项（默认两项都做）")
     ap.add_argument("--no-ai-features", dest="ai_features", action="store_false",
                     help="不安装 ai-features 依赖（AI Copilot / MCP，默认安装）")
+    ap.add_argument("--pip-index", default=DEFAULT_PIP_INDEX, metavar="URL",
+                    help=f"ai 依赖的 pip 源（默认阿里源 {DEFAULT_PIP_INDEX}；直连官方传 https://pypi.org/simple）")
     ap.add_argument("--server-branch", help="gns3-server 打包前 checkout 的分支（默认不动，用当前状态）")
     ap.add_argument("--ubridge-branch", help="ubridge 用 git archive 打该分支（默认不打分支=当前工作树打包）")
     ap.add_argument("--server-repo", default=DEFAULT_SERVER_REPO)
@@ -463,7 +476,7 @@ def main():
         else:
             svc = r["info"].get("service", r["steps"].get("restart", "FAIL"))
         print(f"{h:<20}{s_col:<24}{u_col:<20}{svc:<10}")
-        for k in ("venv", "which", "md5", "server-reason", "server-log", "ai-log", "ai-mcp",
+        for k in ("venv", "which", "md5", "server-reason", "server-log", "ai-index", "ai-log", "ai-mcp",
                   "apt-log", "make-log", "inst-log", "journal"):
             if k in r["info"]:
                 print(f"{'':<20}· {k}: {r['info'][k][:120]}")
