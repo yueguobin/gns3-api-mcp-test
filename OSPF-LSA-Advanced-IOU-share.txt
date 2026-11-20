@@ -1,0 +1,46 @@
+==========================================================
+TITLE
+==========================================================
+
+OSPF LSA Types & Advanced Features - IOU Dual-Stack Lab
+
+==========================================================
+SUBTITLE
+==========================================================
+
+7x Cisco IOU L3 (IOS XE 17.18.2) + Ethernet switch | OSPFv2 + OSPFv3 dual stack | All 7 LSA types, 4 area types, virtual link, DR/BDR election, MD5, summarization, E1/E2 externals, 3 default-route mechanisms
+
+==========================================================
+DESCRIPTION
+==========================================================
+
+A dual-stack OSPF teaching lab built on seven Cisco IOU L3 routers and one Ethernet switch, covering the complete OSPF LSA model plus a set of advanced features. Every claim below was verified live in the LSDB and with end-to-end pings before publishing.
+
+IMAGE
+Cisco IOU L3 runs the x86_64 adventerprisek9 image (x86_64_crb_linux-adventerprisek), reporting "Cisco IOS Software [IOSXE], Linux Software (X86_64BI_LINUX-ADVENTERPRISEK9-M), Version 17.18.2, RELEASE SOFTWARE (fc3)". The Ethernet switch is the GNS3 built-in node.
+
+LSA COVERAGE
+- Type 1 Router, Type 2 Network (DR on the shared broadcast segment), Type 3 Summary (ABR area ranges), Type 4 ASBR-Summary, Type 5 External (E1 routes + default), Type 7 NSSA-External (translated to Type 5 by the ABR)
+- Type 6 (MOSPF group membership) is obsolete and unsupported by Cisco IOS; it is documented on the canvas instead
+
+TOPOLOGY HIGHLIGHTS
+- Four area types in one lab: backbone (Area 0, MD5 auth, DR/BDR/DROther engineered via priorities 100/50/0), standard (Area 1), NSSA (Area 2, ABR-injected Type-7 default), and totally stubby (Area 3)
+- Area 3 attaches to the backbone through an R1-R4 virtual link over Area 1 (comes back up automatically after reload, IPv4 and IPv6)
+- Two ASBRs: R5 redistributes externals as E1 plus a Type-5 default; R6 originates Type-7 externals inside the NSSA, translated and summarized by ABR R3
+- Summarization on both levels: area range on ABRs, summary-address on ASBRs; E1 vs E2 metrics visible side by side (3020 vs 20 on R2)
+- Three default-route mechanisms compared: Type 5 (ASBR), Type 3 (into stub), Type 7 (into NSSA)
+- Point-to-point network type on transit links, 10G reference bandwidth, passive loopbacks, fixed router-IDs
+
+ADDRESSING
+IPv4: 10.<area>.<XY>.0/24 transit links, RIDs 10.255.0.X, external blocks 10.50.0.0/22 and 10.60.0.0/22
+IPv6: 2001:DB8:A<area>:<XY>::/64 links, 2001:DB8::X/128 loopbacks, externals 2001:DB8:50::/48 and 2001:DB8:60::/48
+Canvas annotations (in English) include area boxes, per-link subnets, router roles, and knowledge-point notes.
+
+VERIFIED
+Full adjacency for both OSPFv2 and OSPFv3 (including the virtual link), per-area LSA evidence, inter-area and external pings at 100%, configuration persistence across reload. Clean snapshot included: baseline-7lsa-dualstack-clean.
+
+NOTE
+Classic OSPFv3 (ipv6 router ospf) has no summary-address command on this image, so IPv6 externals stay /64; this is documented on the canvas.
+
+CREDITS
+This project was built autonomously by Claude Code (Anthropic's CLI coding agent) through the MCP interface of a GNS3 3.1 development build (gns3server 3.1.0.dev8+ff6b321b8): topology, addressing, all device configurations, verification, and canvas drawings were created via MCP tool calls without manual device configuration.
