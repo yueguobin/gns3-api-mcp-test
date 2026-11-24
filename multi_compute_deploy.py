@@ -8,6 +8,7 @@
   ./multi_compute_deploy.py -H ... --ubridge-branch feature/capture-multi   # 指定分支(默认用仓库当前状态)
   ./multi_compute_deploy.py -H ... --server-pr 3103        # checkout GitHub PR 构建测试(完事自动切回原分支)
   ./multi_compute_deploy.py -H ... --server-venv ~/.venvs/gns3build  # 指定本地打包用 python(默认 <repo>/venv|/.venv)
+  ./multi_compute_deploy.py -H ... --build-on 192.168.101.21  # 出包放到该 VM 构建(本地只打源码tar+核包, 开发=日用机适用)
   ./multi_compute_deploy.py -H ... --no-ai-features   # 只装 server 本体，不装 AI/MCP 依赖
   ./multi_compute_deploy.py -H ... --no-server-deps   # 不补装 requirements.txt 基础依赖
   ./multi_compute_deploy.py -H ... --pip-index https://pypi.org/simple   # ai 依赖直连官方源(默认阿里源)
@@ -21,6 +22,8 @@
   1. 进入 gns3-server 仓库（--server-pr N 先 gh pr checkout N；--server-branch 先切分支）
      → 清 build/（陈旧 build/lib 会把已删/他分支文件混进 wheel，VM21-24 事故根因）
      → pip wheel → 核包（wheel 实际内容必须 ⊆ 当前源码树，幽灵文件/迁移缺失即中止）→ /tmp/auto_gw/
+     （--build-on HOST 时 pip wheel 在该 VM 上跑：本地打源码 tar(含未提交改动) 上传构建、wheel 拉回本地核包，
+      其余流程不变；核包仍在本地做——tar 就是本地工作树，比对依然成立。开发机=日用机时避免在本地跑构建）
      （--server-pr 构建完自动切回原分支，不留工作树悬在 PR 上）
   2. 上传 wheel + requirements 到各 VM → 装包前在线备份控制器 DB（sqlite backup API，不停服）
      → /var/backups/gns3-db/gns3_controller-<时间戳>-<git短hash>.db + 同名 .manifest
@@ -519,6 +522,45 @@ info done 1
 """
 
 
+# ---- --build-on：源码 tar 上传到指定 VM 出包（本地开发=日用机时，避免在本机跑 pip wheel）----
+BUILD_SRC_TAR = "/tmp/gns3-server-src.tar.gz"
+BUILD_REMOTE_DIR = "/tmp/gns3-server-src"
+BUILD_WHEEL_DIR = "/tmp/gns3srv-wheel"
+# 无需 sudo：全部动作在 gns3 用户可写的 /tmp 下；构建依赖(setuptools 等)由 PEP517 隔离构建
+# 现拉，VM 直连官方源极慢，默认走 --pip-index(阿里源)
+BUILD_REMOTE_SH = r"""
+set -u
+VENV_DEF=__VENV__
+PINDEX=__PINDEX__
+step() { printf '###STEP:%s:%s\n' "$1" "$2"; }
+info() { printf '###INFO:%s:%s\n' "$1" "$2"; }
+rm -rf __BUILD_DIR__ __WHEEL_DIR__ && mkdir -p __BUILD_DIR__ __WHEEL_DIR__
+if ! tar xzf __SRC_TAR__ -C __BUILD_DIR__; then
+  step unpack FAIL
+  info done 1
+  exit 0
+fi
+step unpack OK
+cd __BUILD_DIR__
+rm -rf build
+BP="$VENV_DEF/bin/python3"
+[ -x "$BP" ] || BP=$(command -v python3)
+info build-py "$BP"
+PIP_IDX=""
+[ -n "$PINDEX" ] && PIP_IDX="-i $PINDEX"
+info build-index "${PINDEX:-官方源}"
+if "$BP" -m pip wheel . --no-deps $PIP_IDX -w __WHEEL_DIR__ >/tmp/gns3-build.log 2>&1; then
+  step build OK
+  W=$(ls -1 __WHEEL_DIR__/*.whl 2>/dev/null | head -1)
+  info wheel "${W##*/}"
+else
+  step build FAIL
+  info build-log "$(tail -n 8 /tmp/gns3-build.log | tr '\n' ' ')"
+fi
+info done 1
+"""
+
+
 # ---------------------------------------------------------------- 基础件
 
 def parse_hosts(spec):
@@ -683,7 +725,7 @@ def resolve_build_python(repo, explicit):
 
 
 def _build_server(args, info):
-    """server 本体出包（清 build → pip wheel → 核包 → 读迁移链 → 收集依赖清单）。
+    """server 本体出包，本地构建路径（清 build → pip wheel → _finish_server 收尾）。
     --server-pr 时调用方已 checkout PR，本函数全程跑在 PR 树上，结束后由调用方切回。"""
     os.makedirs(GW_DIR, exist_ok=True)
     run(f"rm -f {GW_DIR}/*.whl")
@@ -696,10 +738,18 @@ def _build_server(args, info):
     wheels = glob.glob(f"{GW_DIR}/*.whl")
     if not wheels:
         raise SystemExit("pip wheel 没产出 .whl")
-    verify_wheel(args.server_repo, wheels[0])
-    info["wheel"] = os.path.basename(wheels[0])
+    _finish_server(args, info, wheels[0], venv_py)
+
+
+def _finish_server(args, info, wheel_path, venv_py=None):
+    """wheel 产出后的共同收尾：核包 → 读迁移链 → 收集依赖清单 → 打印摘要。
+    核包/迁移链/依赖收集始终在本地做——--build-on 的源码 tar 就是本地工作树，比对依然成立。"""
+    verify_wheel(args.server_repo, wheel_path)
+    info["wheel"] = os.path.basename(wheel_path)
     m = re.match(r"(.+)-(\d[^-]*)-(.+)\.whl$", info["wheel"])
     info["wheel_ver"] = m.group(2) if m else "?"
+    if venv_py is None:
+        venv_py = resolve_build_python(args.server_repo, getattr(args, "server_venv", None))
     info["server_src"] = run("git log -1 --format='%h %s'", cwd=args.server_repo).strip()
     info["server_dirty"] = "工作树有未提交改动" if run("git status --porcelain", cwd=args.server_repo).strip() else "工作树干净"
     head, revs = alembic_revs(args.server_repo, venv_py)
@@ -721,14 +771,73 @@ def _build_server(args, info):
                 raise SystemExit(f"找不到 {path}（ai-features 依赖清单）")
             reqs.append(path)
         info["ai_reqs"] = reqs
-    print(f"  wheel → {GW_DIR}/{info['wheel']}  （{info['server_src']}，{info['server_dirty']}）")
+    print(f"  wheel → {wheel_path}  （{info['server_src']}，{info['server_dirty']}）")
     if args.server_deps:
         print(f"  reqs  → {SERVER_REQ_FILE}  （server 基础依赖，部署时补装缺失项）")
     if args.ai_features:
         print(f"  ai    → {', '.join(AI_REQ_FILES)}  （ai-features 依赖）")
 
 
-def build_local(args):
+def _build_on_remote(args, info, password):
+    """--build-on HOST：本地只打源码 tar（含未提交改动，等价"当前工作树"），上传到该 VM 跑
+    清 build + pip wheel（PEP517 隔离构建，构建依赖走 --pip-index），wheel 拉回本地后
+    仍走 _finish_server 的本地核包/迁移链/依赖收集——部署链路其余部分零改动。
+    开发机=日用机时避免在本地跑构建。构建机不要求在 -H 目标列表里，但要 SSH 可达。"""
+    host = args.build_on
+    repo = args.server_repo
+    ex = " ".join(f"--exclude={e}" for e in
+                  ("./.git", "./build", "./dist", "./venv", "./.venv", "./.pytest_cache",
+                   "./.mypy_cache", "./.tox", "__pycache__", "*.egg-info"))
+    run(f"tar czf {BUILD_SRC_TAR} {ex} -C {shlex.quote(repo)} .")
+    print(f"  源码 tar → {BUILD_SRC_TAR}（{os.path.getsize(BUILD_SRC_TAR) / 1e6:.1f} MB）→ 上传 {host} 构建")
+    try:
+        client = ssh_connect(host, args.user, password, args.port)
+    except Exception as e:
+        raise SystemExit(f"构建机 {host} 连接失败: {type(e).__name__}（检查可达性/账号密码）")
+    try:
+        sftp = client.open_sftp()
+        sftp.put(BUILD_SRC_TAR, BUILD_SRC_TAR)
+        script = render_script(BUILD_REMOTE_SH, {
+            "__VENV__": shlex.quote(args.venv),
+            "__PINDEX__": shlex.quote(getattr(args, "pip_index", "") or ""),
+            "__SRC_TAR__": shlex.quote(BUILD_SRC_TAR),
+            "__BUILD_DIR__": shlex.quote(BUILD_REMOTE_DIR),
+            "__WHEEL_DIR__": shlex.quote(BUILD_WHEEL_DIR),
+        })
+        import base64
+        b64 = base64.b64encode(script.encode()).decode()
+        rc, out, err = ssh_exec(client, f"echo {b64} | base64 -d | bash", deadline=1800)
+        steps, rinfo = {}, {}
+        for line in (out + "\n" + err).splitlines():
+            if line.startswith("###STEP:"):
+                _, n, st = line.split(":", 2)
+                steps[n] = st
+            elif line.startswith("###INFO:"):
+                _, k, v = line.split(":", 2)
+                rinfo[k] = v
+        if steps.get("unpack") != "OK":
+            raise SystemExit(f"远端解包失败: {rinfo.get('build-log') or out.strip()[-200:]}")
+        if steps.get("build") != "OK":
+            raise SystemExit(f"远端构建失败（现场保留：{host}:/tmp/gns3-build.log、{BUILD_REMOTE_DIR}/ 可查）"
+                             f"：{rinfo.get('build-log', '')}")
+        wheel_name = rinfo.get("wheel", "")
+        if not wheel_name:
+            raise SystemExit("远端构建未产出 .whl")
+        print(f"  远端构建 OK: {wheel_name}  （py={rinfo.get('build-py', '?')}，index={rinfo.get('build-index', '?')}）")
+        os.makedirs(GW_DIR, exist_ok=True)
+        run(f"rm -f {GW_DIR}/*.whl")
+        local_wheel = os.path.join(GW_DIR, wheel_name)
+        sftp.get(f"{BUILD_WHEEL_DIR}/{wheel_name}", local_wheel)
+        sftp.close()
+        ssh_exec(client, f"rm -rf {shlex.quote(BUILD_REMOTE_DIR)} {shlex.quote(BUILD_WHEEL_DIR)} "
+                         f"{shlex.quote(BUILD_SRC_TAR)}")
+    finally:
+        client.close()
+    info["build_host"] = host
+    return local_wheel
+
+
+def build_local(args, password):
     info = {}
     do_server = args.only in ("both", "server")
     do_ubridge = args.only in ("both", "ubridge")
@@ -736,6 +845,8 @@ def build_local(args):
     if do_server:
         if getattr(args, "server_pr", None) and args.server_branch:
             raise SystemExit("--server-pr 与 --server-branch 互斥，一次只测一个")
+        if getattr(args, "build_on", None) and getattr(args, "server_venv", None):
+            raise SystemExit("--build-on 与 --server-venv 互斥：远端构建用 VM 上的 python，无本地打包解释器可配")
         prev_ref = None
         if getattr(args, "server_pr", None):
             prev_ref = checkout_pr(args.server_repo, args.server_pr)
@@ -745,7 +856,11 @@ def build_local(args):
             if cur != args.server_branch:
                 run(f"git checkout {shlex.quote(args.server_branch)}", cwd=args.server_repo)
         try:
-            _build_server(args, info)
+            if getattr(args, "build_on", None):
+                wheel_path = _build_on_remote(args, info, password)
+                _finish_server(args, info, wheel_path)
+            else:
+                _build_server(args, info)
         finally:
             if prev_ref:
                 run(f"git checkout {shlex.quote(prev_ref)}", cwd=args.server_repo)
@@ -961,7 +1076,8 @@ def main():
     ap.add_argument("--no-server-deps", dest="server_deps", action="store_false",
                     help="不补装 gns3-server requirements.txt 基础依赖（默认安装；wheel --no-deps 不带依赖，新增依赖须靠此步落地）")
     ap.add_argument("--pip-index", default=DEFAULT_PIP_INDEX, metavar="URL",
-                    help=f"ai 依赖的 pip 源（默认阿里源 {DEFAULT_PIP_INDEX}；直连官方传 https://pypi.org/simple）")
+                    help=f"ai 依赖的 pip 源（默认阿里源 {DEFAULT_PIP_INDEX}；直连官方传 https://pypi.org/simple；"
+                         f"--build-on 时远端构建的依赖下载也走此源）")
     ap.add_argument("--server-branch", help="gns3-server 打包前 checkout 的分支（默认不动，用当前状态）")
     ap.add_argument("--server-pr", type=int, metavar="N",
                     help="部署前 checkout 该 GitHub PR 构建（gh 优先，退 git fetch pull/N/head；要求工作树干净；"
@@ -971,7 +1087,11 @@ def main():
                     help=f"gns3-server 本地仓库（默认 {DEFAULT_SERVER_REPO}）")
     ap.add_argument("--server-venv", default=None, metavar="PATH",
                     help="本地打包用的 python（venv 目录或解释器路径；默认依次找 <repo>/venv、<repo>/.venv，"
-                         "都没有退回系统 python3；注意与 --venv 区分，后者是 VM 上的运行 venv）")
+                         "都没有退回系统 python3；注意与 --venv 区分，后者是 VM 上的运行 venv；与 --build-on 互斥）")
+    ap.add_argument("--build-on", default=None, metavar="HOST",
+                    help="gns3-server 出包放到该 VM 上构建（本地只打源码 tar + 拉回核包；开发机=日用机时用，"
+                         "避免在本地跑 pip wheel；构建机不要求在 -H 列表里，但要 SSH 可达；"
+                         "与 --server-venv 互斥；构建依赖下载走 --pip-index）")
     ap.add_argument("--ubridge-repo", default=DEFAULT_UBRIDGE_REPO,
                     help=f"ubridge 本地仓库（默认 {DEFAULT_UBRIDGE_REPO}）")
     ap.add_argument("--venv", default=DEFAULT_VENV, help="VM 上 venv（找不到自动从 gns3.service 反推）")
@@ -1017,8 +1137,11 @@ def main():
         script = render_aux(RESTORE_SCRIPT, args, password, {"__WHICH__": shlex.quote(str(args.restore_db))})
         print(f"\n[1/1] 恢复数据库备份(选择={args.restore_db}，{len(reachable)} 台并行 {min(args.parallel, len(reachable))})")
     else:
-        print("\n[1/2] 本地打包")
-        info = build_local(args)
+        if getattr(args, "build_on", None):
+            print(f"\n[1/2] 打包（源码 tar → {args.build_on} 构建 → 拉回核包）")
+        else:
+            print("\n[1/2] 本地打包")
+        info = build_local(args, password)
         if args.build_only:
             print("（--build-only：未连接任何 VM）")
             return
