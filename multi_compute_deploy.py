@@ -26,7 +26,7 @@
      → /var/backups/gns3-db/gns3_controller-<时间戳>-<git短hash>.db + 同名 .manifest
      （manifest 记录 alembic rev/md5/size/git；同一代码同一 DB 状态不重复备份；保留最近 N 份）
      DB 定位与 gns3server 同规则：实际加载的 gns3_server.conf 同目录/gns3_controller.db；
-     unit 里设了 GNS3_DATABASE_URI 则优先；conf 找不到才按默认位置兜底
+     解析顺序：unit GNS3_DATABASE_URI → unit ExecStart --config → 隐式搜索路径 → 默认位置兜底
   3. 进 venv 执行
      pip install --force-reinstall --no-deps（server 本体，不带依赖）
      pip install -r requirements.txt（基础依赖补装：已满足项跳过，新增项落地）
@@ -116,7 +116,17 @@ if [ "$RESOLVE_DB" = 1 ]; then
   if [ -n "$URI" ] && [ -f "$URI" ]; then
     DBFILE="$URI"
     info db-src "unit GNS3_DATABASE_URI"
-  else
+  fi
+  if [ -z "$DBFILE" ]; then
+    # unit ExecStart 显式 --config 时 conf/DB 都以它为准（VM21 实况：--config /opt/gns3/server/gns3_server.conf）
+    CONF=$(systemctl cat gns3 2>/dev/null | grep '^ExecStart=' | grep -o -- '--config[= ][^[:space:]]*' | head -1 | sed 's/^--config[= ]//')
+    [ -f "$CONF" ] || CONF=""
+  fi
+  if [ -z "$DBFILE" ] && [ -n "$CONF" ] && [ -f "$(dirname "$CONF")/gns3_controller.db" ]; then
+    DBFILE="$(dirname "$CONF")/gns3_controller.db"
+    info db-src "unit --config: $CONF"
+  fi
+  if [ -z "$DBFILE" ]; then
     VER=$("$VENV/bin/pip" show gns3-server 2>/dev/null | sed -n 's/^Version:[[:space:]]*\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p')
     CONF=""
     for c in \
@@ -458,8 +468,14 @@ s cp -a "$DBFILE" "$BKDIR/$PRE.db"
 for suf in -wal -shm; do
   s test -f "$DBFILE$suf" && s cp -a "$DBFILE$suf" "$BKDIR/$PRE.db$suf"
 done
-printf 'ts=pre-restore\nsrc=%s\nrev=%s\nhash=pre-restore\nnote=--restore-db 恢复前的当前库安全网\n' \
-  "$DBFILE" "$DBREV" | s tee "$BKDIR/$PRE.manifest" >/dev/null
+# 注意别把数据管道进 s：s() 内部会用密码行重建 sudo stdin，外层管道数据会被丢弃（tee 会把密码写进文件）
+MF="$BKDIR/$PRE.manifest"
+if ! printf 'ts=pre-restore\nsrc=%s\nrev=%s\nhash=pre-restore\nnote=--restore-db 恢复前的当前库安全网\n' \
+     "$DBFILE" "$DBREV" > "$MF" 2>/dev/null; then
+  printf 'ts=pre-restore\nsrc=%s\nrev=%s\nhash=pre-restore\nnote=--restore-db 恢复前的当前库安全网\n' \
+    "$DBFILE" "$DBREV" > /tmp/.pre-restore.manifest
+  s mv /tmp/.pre-restore.manifest "$MF"
+fi
 if [ "$DB_KEEP" -gt 0 ]; then
   i=0
   for m in $(s ls -1t "$BKDIR"/*.manifest 2>/dev/null); do
