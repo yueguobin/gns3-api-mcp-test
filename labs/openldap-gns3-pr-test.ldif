@@ -1,0 +1,115 @@
+# GNS3 LDAP PR 测试目录数据 (gns3-server merge-ldap-3103 分支)
+# 目标树: ou=gns3,dc=example,dc=org —— 与节点里已有的旧演示树(ou=people/ou=groups/ou=devices)隔离
+# 应用: ldapadd -x -h 192.168.101.31 -D cn=admin,dc=example,dc=org -w admin -f openldap-gns3-pr-test.ldif
+#
+# 登录用户(7个)统一密码: gns3test
+# 服务账号 svc-gns3 密码: svcldap123 (gns3_server.conf bind_dn 用, 读权限即可)
+#
+# 组成员矩阵:
+#   all-staff        : alice                (故意不映射 -> JIT + default_group fallback)
+#   gns3-superadmins : frank                (superadmin_groups -> is_superadmin 升/降翻转)
+#   gns3-admins      : bob, carol, erin     (映射 -> GNS3 Administrators)
+#   gns3-testers     : carol, dave          (映射 -> GNS3 Testers; carol 双组/受管组重算)
+#   Alice (大写A)     : 无组                 (大小写陷阱用例)
+
+# ---- 容器 OU ----
+dn: ou=gns3,dc=example,dc=org
+objectClass: organizationalUnit
+ou: gns3
+
+dn: ou=people,ou=gns3,dc=example,dc=org
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,ou=gns3,dc=example,dc=org
+objectClass: organizationalUnit
+ou: groups
+
+# ---- 服务账号 (bind_dn) ----
+dn: uid=svc-gns3,ou=people,ou=gns3,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: svc-gns3
+cn: GNS3 Service Account
+sn: svc-gns3
+userPassword: {SSHA}ZrO9juJXB8yVCfROEy1DjMjVi1IDe3pe
+
+# ---- 用户 ----
+dn: uid=alice,ou=people,ou=gns3,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice Newleaf
+sn: Newleaf
+mail: alice@example.org
+userPassword: {SSHA}Px3LFp1dmanIQSpzr4sUEaDuq/GC7+fl
+
+dn: uid=Alice,ou=people,ou=gns3,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: Alice
+cn: Alice Upper
+sn: Upper
+mail: alice.upper@example.org
+userPassword: {SSHA}Px3LFp1dmanIQSpzr4sUEaDuq/GC7+fl
+
+dn: uid=bob,ou=people,ou=gns3,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob Admin
+sn: Admin
+mail: bob@example.org
+userPassword: {SSHA}Px3LFp1dmanIQSpzr4sUEaDuq/GC7+fl
+
+dn: uid=carol,ou=people,ou=gns3,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: carol
+cn: Carol Multi
+sn: Multi
+mail: carol@example.org
+userPassword: {SSHA}Px3LFp1dmanIQSpzr4sUEaDuq/GC7+fl
+
+dn: uid=dave,ou=people,ou=gns3,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: dave
+cn: Dave Tester
+sn: Tester
+mail: dave@example.org
+userPassword: {SSHA}Px3LFp1dmanIQSpzr4sUEaDuq/GC7+fl
+
+dn: uid=erin,ou=people,ou=gns3,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: erin
+cn: Erin Local
+sn: Local
+mail: erin@example.org
+userPassword: {SSHA}Px3LFp1dmanIQSpzr4sUEaDuq/GC7+fl
+
+dn: uid=frank,ou=people,ou=gns3,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: frank
+cn: Frank Super
+sn: Super
+mail: frank@example.org
+userPassword: {SSHA}Px3LFp1dmanIQSpzr4sUEaDuq/GC7+fl
+
+# ---- 组 (groupOfNames, 对应代码默认 group_search_filter) ----
+dn: cn=all-staff,ou=groups,ou=gns3,dc=example,dc=org
+objectClass: groupOfNames
+cn: all-staff
+member: uid=alice,ou=people,ou=gns3,dc=example,dc=org
+
+dn: cn=gns3-superadmins,ou=groups,ou=gns3,dc=example,dc=org
+objectClass: groupOfNames
+cn: gns3-superadmins
+member: uid=frank,ou=people,ou=gns3,dc=example,dc=org
+
+dn: cn=gns3-admins,ou=groups,ou=gns3,dc=example,dc=org
+objectClass: groupOfNames
+cn: gns3-admins
+member: uid=bob,ou=people,ou=gns3,dc=example,dc=org
+member: uid=carol,ou=people,ou=gns3,dc=example,dc=org
+member: uid=erin,ou=people,ou=gns3,dc=example,dc=org
+
+dn: cn=gns3-testers,ou=groups,ou=gns3,dc=example,dc=org
+objectClass: groupOfNames
+cn: gns3-testers
+member: uid=carol,ou=people,ou=gns3,dc=example,dc=org
+member: uid=dave,ou=people,ou=gns3,dc=example,dc=org
