@@ -6,6 +6,8 @@
   ./multi_compute_deploy.py -H "192.168.101.21"              # 只提示输密码
   ./multi_compute_deploy.py -H "192.168.101.20-25,vm1.corp" -u gns3 -p 'xxx'
   ./multi_compute_deploy.py -H ... --ubridge-branch feature/capture-multi   # 指定分支(默认用仓库当前状态)
+  ./multi_compute_deploy.py -H ... --server-pr 3103        # checkout GitHub PR 构建测试(完事自动切回原分支)
+  ./multi_compute_deploy.py -H ... --server-venv ~/.venvs/gns3build  # 指定本地打包用 python(默认 <repo>/venv|/.venv)
   ./multi_compute_deploy.py -H ... --no-ai-features   # 只装 server 本体，不装 AI/MCP 依赖
   ./multi_compute_deploy.py -H ... --no-server-deps   # 不补装 requirements.txt 基础依赖
   ./multi_compute_deploy.py -H ... --pip-index https://pypi.org/simple   # ai 依赖直连官方源(默认阿里源)
@@ -16,8 +18,10 @@
   ./multi_compute_deploy.py -H ... --restore-db gns3_controller-20261124-153045-1f20fc6
 
 固定流程（与你手工步骤一一对应）:
-  1. 进入 gns3-server 仓库 → 清 build/（陈旧 build/lib 会把已删/他分支文件混进 wheel，VM21-24 事故根因）
+  1. 进入 gns3-server 仓库（--server-pr N 先 gh pr checkout N；--server-branch 先切分支）
+     → 清 build/（陈旧 build/lib 会把已删/他分支文件混进 wheel，VM21-24 事故根因）
      → pip wheel → 核包（wheel 实际内容必须 ⊆ 当前源码树，幽灵文件/迁移缺失即中止）→ /tmp/auto_gw/
+     （--server-pr 构建完自动切回原分支，不留工作树悬在 PR 上）
   2. 上传 wheel + requirements 到各 VM → 装包前在线备份控制器 DB（sqlite backup API，不停服）
      → /var/backups/gns3-db/gns3_controller-<时间戳>-<git短hash>.db + 同名 .manifest
      （manifest 记录 alembic rev/md5/size/git；同一代码同一 DB 状态不重复备份；保留最近 N 份）
@@ -617,57 +621,119 @@ def verify_wheel(repo, wheel_path):
     print(f"  核包 → wheel-only 0 / 迁移缺失 0（wheel 共 {len(wheel_files)} 文件）")
 
 
+def checkout_pr(repo, pr):
+    """--server-pr：checkout 指定 GitHub PR（gh 优先，自动处理 fork PR 的 remote；
+    无 gh 退 git fetch pull/N/head），返回原分支供构建后切回。要求工作树干净——
+    否则脏改动会被 checkout 带进 PR 构建（幽灵文件事故的变体）。"""
+    if run("git status --porcelain", cwd=repo).strip():
+        raise SystemExit("--server-pr 要求工作树干净（先 commit/stash），否则脏改动会被带进 PR 构建")
+    orig = run("git rev-parse --abbrev-ref HEAD", cwd=repo).strip()
+    import shutil
+    if shutil.which("gh"):
+        run(f"gh pr checkout {pr}", cwd=repo)
+    else:
+        remotes = run("git remote", cwd=repo).split()
+        rem = "upstream" if "upstream" in remotes else ("origin" if "origin" in remotes else "")
+        if not rem:
+            raise SystemExit("无 gh 且仓库没有任何 remote，无法取 PR")
+        run(f"git fetch {rem} pull/{pr}/head", cwd=repo)
+        run("git checkout --detach FETCH_HEAD", cwd=repo)
+    return orig
+
+
+def resolve_build_python(repo, explicit):
+    """本地打包用的 python：--server-venv 显式指定（venv 目录或解释器路径）优先；
+    不给则依次找 <repo>/venv、<repo>/.venv；都没有退回系统 python3
+    （pip wheel 走 PEP517 隔离构建不依赖 venv 内容，迁移链读取缺 alembic 时自动跳过降级预警）。"""
+    import shutil
+    cands = []
+    if explicit:
+        if os.path.isdir(explicit):
+            cands += [os.path.join(explicit, "bin", "python"), os.path.join(explicit, "bin", "python3")]
+        else:
+            cands.append(explicit)
+    else:
+        cands = [os.path.join(repo, d, "bin", "python") for d in ("venv", ".venv")]
+    for c in cands:
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    if explicit:
+        raise SystemExit(f"--server-venv 指定的解释器/venv 不存在: {explicit}")
+    py3 = shutil.which("python3")
+    if not py3:
+        raise SystemExit("找不到打包用 python：repo 里无 venv/.venv 且系统无 python3；用 --server-venv 指定")
+    print(f"  （repo 里没找到 venv/.venv，退回系统 python3: {py3}；若缺 alembic，迁移链读取与降级预警自动跳过）")
+    return py3
+
+
+def _build_server(args, info):
+    """server 本体出包（清 build → pip wheel → 核包 → 读迁移链 → 收集依赖清单）。
+    --server-pr 时调用方已 checkout PR，本函数全程跑在 PR 树上，结束后由调用方切回。"""
+    os.makedirs(GW_DIR, exist_ok=True)
+    run(f"rm -f {GW_DIR}/*.whl")
+    venv_py = resolve_build_python(args.server_repo, getattr(args, "server_venv", None))
+    # 出包前必清 build/：setuptools 复用 build 缓存，陈旧 build/lib 会把已删/他分支文件打进 wheel
+    # （VM21-24 崩溃循环事故根因；git status 干净 ≠ 包干净）
+    run("rm -rf build", cwd=args.server_repo)
+    run(f"{shlex.quote(venv_py)} -m pip wheel . --no-deps -w {GW_DIR}", cwd=args.server_repo)
+    import glob
+    wheels = glob.glob(f"{GW_DIR}/*.whl")
+    if not wheels:
+        raise SystemExit("pip wheel 没产出 .whl")
+    verify_wheel(args.server_repo, wheels[0])
+    info["wheel"] = os.path.basename(wheels[0])
+    m = re.match(r"(.+)-(\d[^-]*)-(.+)\.whl$", info["wheel"])
+    info["wheel_ver"] = m.group(2) if m else "?"
+    info["server_src"] = run("git log -1 --format='%h %s'", cwd=args.server_repo).strip()
+    info["server_dirty"] = "工作树有未提交改动" if run("git status --porcelain", cwd=args.server_repo).strip() else "工作树干净"
+    head, revs = alembic_revs(args.server_repo, venv_py)
+    info["alembic_head"] = head
+    info["alembic_revs"] = revs
+    print(f"  alembic → head={head or '未知'}（{len(revs)} 个迁移版本）")
+    if getattr(args, "server_pr", None):
+        print(f"  PR #{args.server_pr} → {info['server_src']}")
+    if args.server_deps:
+        req = os.path.join(args.server_repo, SERVER_REQ_FILE)
+        if not os.path.isfile(req):
+            raise SystemExit(f"找不到 {req}（gns3-server 基础依赖清单）")
+        info["server_req"] = req
+    if args.ai_features:
+        reqs = []
+        for name in AI_REQ_FILES:
+            path = os.path.join(args.server_repo, name)
+            if not os.path.isfile(path):
+                raise SystemExit(f"找不到 {path}（ai-features 依赖清单）")
+            reqs.append(path)
+        info["ai_reqs"] = reqs
+    print(f"  wheel → {GW_DIR}/{info['wheel']}  （{info['server_src']}，{info['server_dirty']}）")
+    if args.server_deps:
+        print(f"  reqs  → {SERVER_REQ_FILE}  （server 基础依赖，部署时补装缺失项）")
+    if args.ai_features:
+        print(f"  ai    → {', '.join(AI_REQ_FILES)}  （ai-features 依赖）")
+
+
 def build_local(args):
     info = {}
     do_server = args.only in ("both", "server")
     do_ubridge = args.only in ("both", "ubridge")
 
     if do_server:
-        if args.server_branch:
+        if getattr(args, "server_pr", None) and args.server_branch:
+            raise SystemExit("--server-pr 与 --server-branch 互斥，一次只测一个")
+        prev_ref = None
+        if getattr(args, "server_pr", None):
+            prev_ref = checkout_pr(args.server_repo, args.server_pr)
+            info["server_pr"] = args.server_pr
+        elif args.server_branch:
             cur = run("git rev-parse --abbrev-ref HEAD", cwd=args.server_repo).strip()
             if cur != args.server_branch:
                 run(f"git checkout {shlex.quote(args.server_branch)}", cwd=args.server_repo)
-        os.makedirs(GW_DIR, exist_ok=True)
-        run(f"rm -f {GW_DIR}/*.whl")
-        venv_py = os.path.join(args.server_repo, "venv/bin/python")
-        if not os.path.isfile(venv_py):
-            raise SystemExit(f"找不到 {venv_py}（--server-repo 不对?）")
-        # 出包前必清 build/：setuptools 复用 build 缓存，陈旧 build/lib 会把已删/他分支文件打进 wheel
-        # （VM21-24 崩溃循环事故根因；git status 干净 ≠ 包干净）
-        run("rm -rf build", cwd=args.server_repo)
-        run(f"{shlex.quote(venv_py)} -m pip wheel . --no-deps -w {GW_DIR}", cwd=args.server_repo)
-        import glob
-        wheels = glob.glob(f"{GW_DIR}/*.whl")
-        if not wheels:
-            raise SystemExit("pip wheel 没产出 .whl")
-        verify_wheel(args.server_repo, wheels[0])
-        info["wheel"] = os.path.basename(wheels[0])
-        m = re.match(r"(.+)-(\d[^-]*)-(.+)\.whl$", info["wheel"])
-        info["wheel_ver"] = m.group(2) if m else "?"
-        info["server_src"] = run("git log -1 --format='%h %s'", cwd=args.server_repo).strip()
-        info["server_dirty"] = "工作树有未提交改动" if run("git status --porcelain", cwd=args.server_repo).strip() else "工作树干净"
-        head, revs = alembic_revs(args.server_repo, venv_py)
-        info["alembic_head"] = head
-        info["alembic_revs"] = revs
-        print(f"  alembic → head={head or '未知'}（{len(revs)} 个迁移版本）")
-        if args.server_deps:
-            req = os.path.join(args.server_repo, SERVER_REQ_FILE)
-            if not os.path.isfile(req):
-                raise SystemExit(f"找不到 {req}（gns3-server 基础依赖清单）")
-            info["server_req"] = req
-        if args.ai_features:
-            reqs = []
-            for name in AI_REQ_FILES:
-                path = os.path.join(args.server_repo, name)
-                if not os.path.isfile(path):
-                    raise SystemExit(f"找不到 {path}（ai-features 依赖清单）")
-                reqs.append(path)
-            info["ai_reqs"] = reqs
-        print(f"  wheel → {GW_DIR}/{info['wheel']}  （{info['server_src']}，{info['server_dirty']}）")
-        if args.server_deps:
-            print(f"  reqs  → {SERVER_REQ_FILE}  （server 基础依赖，部署时补装缺失项）")
-        if args.ai_features:
-            print(f"  ai    → {', '.join(AI_REQ_FILES)}  （ai-features 依赖）")
+        try:
+            _build_server(args, info)
+        finally:
+            if prev_ref:
+                run(f"git checkout {shlex.quote(prev_ref)}", cwd=args.server_repo)
+                print(f"  已切回原分支 {prev_ref}（PR 构建完不留工作树）")
 
     if do_ubridge:
         if args.ubridge_branch:
@@ -871,7 +937,7 @@ def main():
     ap.add_argument("-H", "--hosts", help="主机: IP/域名/末段区间/CIDR，逗号或空格分隔（不给则交互输入）")
     ap.add_argument("-u", "--user", help=f"VM 用户名（默认 {DEFAULT_USER}）")
     ap.add_argument("-p", "--password", help="密码（也支持环境变量 GNS3VM_PASSWORD；不给则交互输入）")
-    ap.add_argument("--port", type=int, default=22)
+    ap.add_argument("--port", type=int, default=22, help="SSH 端口（默认 22）")
     ap.add_argument("--only", choices=["both", "server", "ubridge"], default="both",
                     help="只部署其中一项（默认两项都做）")
     ap.add_argument("--no-ai-features", dest="ai_features", action="store_false",
@@ -881,9 +947,17 @@ def main():
     ap.add_argument("--pip-index", default=DEFAULT_PIP_INDEX, metavar="URL",
                     help=f"ai 依赖的 pip 源（默认阿里源 {DEFAULT_PIP_INDEX}；直连官方传 https://pypi.org/simple）")
     ap.add_argument("--server-branch", help="gns3-server 打包前 checkout 的分支（默认不动，用当前状态）")
+    ap.add_argument("--server-pr", type=int, metavar="N",
+                    help="部署前 checkout 该 GitHub PR 构建（gh 优先，退 git fetch pull/N/head；要求工作树干净；"
+                         "构建完自动切回原分支；与 --server-branch 互斥）")
     ap.add_argument("--ubridge-branch", help="ubridge 用 git archive 打该分支（默认不打分支=当前工作树打包）")
-    ap.add_argument("--server-repo", default=DEFAULT_SERVER_REPO)
-    ap.add_argument("--ubridge-repo", default=DEFAULT_UBRIDGE_REPO)
+    ap.add_argument("--server-repo", default=DEFAULT_SERVER_REPO,
+                    help=f"gns3-server 本地仓库（默认 {DEFAULT_SERVER_REPO}）")
+    ap.add_argument("--server-venv", default=None, metavar="PATH",
+                    help="本地打包用的 python（venv 目录或解释器路径；默认依次找 <repo>/venv、<repo>/.venv，"
+                         "都没有退回系统 python3；注意与 --venv 区分，后者是 VM 上的运行 venv）")
+    ap.add_argument("--ubridge-repo", default=DEFAULT_UBRIDGE_REPO,
+                    help=f"ubridge 本地仓库（默认 {DEFAULT_UBRIDGE_REPO}）")
     ap.add_argument("--venv", default=DEFAULT_VENV, help="VM 上 venv（找不到自动从 gns3.service 反推）")
     ap.add_argument("--no-restart", action="store_true", help="部署后不重启 gns3 服务")
     ap.add_argument("--db-backups", type=int, default=DEFAULT_DB_BACKUPS, metavar="N",
