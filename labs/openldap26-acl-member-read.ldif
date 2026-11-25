@@ -1,0 +1,13 @@
+# osixia/openldap 2.6 (v2 镜像) 默认 ACL {2} 是属性白名单 read:
+#   {2}to attrs=entry,objectClass,cn,sn,givenName,mail,uid,ou,o,dc by self read by users read by * break
+# 白名单里没有 member —— gns3-server 的组解析过滤器
+# (objectClass=groupOfNames)(member=<userDN>) 会被 {3} to * by * none 拦掉(条目不匹配)。
+# 改动: {2} attrs 列表末尾追加 member。其余规则不动。
+# 应用: ldapmodify -x -H ldap://192.168.101.31:3890 -D "cn=admin,cn=config" -w config -f openldap26-acl-member-read.ldif
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+delete: olcAccess
+olcAccess: {2}to attrs=entry,objectClass,cn,sn,givenName,mail,uid,ou,o,dc by self read by users read by * break
+-
+add: olcAccess
+olcAccess: {2}to attrs=entry,objectClass,cn,sn,givenName,mail,uid,ou,o,dc,member by self read by users read by * break
