@@ -7,7 +7,7 @@
 |---|---|
 | Test date | 2026-11-26 |
 | System under test | gns3-server **3.1.0.dev8** on VM21 (LDAP authentication, build from PR #3103) together with **OpenLDAP-1** (osixia/openldap:2.6.15, `ldap://ldap.example.org:3890` / `ldaps://:6360`, IP 192.168.101.31) |
-| Test scope | **Functional test matrix, 23 items**: login (6) / groups and roles (6) / TLS (4) / outage and recovery (5) / admin and diagnostics (2) |
+| Test scope | **Functional test matrix, 23 items**: login (6) / groups and roles (6) / TLS (4) / outage and recovery (5) / admin and diagnostics (2); **plus 9 extra tests from the same day** (broken bind_dn, input limits, half-dead directory timeout, refresh token × revocation, deleted user, password-policy lockout, service restart — see §5) |
 | Test method | **Black-box functional tests**: REST API calls (curl and scripts), LDAP commands from the test host, MCP `node_stop` / `node_start`. This report only describes what the features do. It does not discuss code. |
 | Setup | The full configuration is in **§0.2 and §0.3** (all commands included). Test scripts: `labs/pr3103-retest-scripts/`. Config check: §0.4. |
 | Result mark | ✓ pass — **all 23 items passed** |
@@ -428,3 +428,73 @@ curl -X POST http://192.168.101.21/v3/settings/ldap/test -H "Authorization: Bear
 - The password is masked in the settings. The diagnostics endpoint works.
 
 After the tests, the config stays in its normal state: StartTLS + verify_cert=True + the two group mappings. No change was left behind in the environment.
+
+## 5. Extra tests (same day, 9 more scenarios)
+
+We also tested 9 more common scenarios. The test numbers continue from 24 to 32.
+
+### 5.1 Results table
+
+| Group | Test | Scenario | Result | What we saw |
+|---|---|---|---|---|
+| F service bind | 测试24 | The bind_dn password is wrong (global failure) | ✓ | We broke the svc-gns3 password on purpose → **all LDAP logins return 401** (fast, about 0.03 s, no error leak). After we restored the old hash → 200 at once |
+| G input limits | 测试25 | Empty password | ✓ | 401 (no "empty password = anonymous bind" hole) |
+| G input limits | 测试26 | Password with special characters | ✓ | dave's password set to `Gns3!测 试#2026&<>"'` (Chinese, spaces, quotes, symbols) → login **200**; after restore, the normal password works again |
+| G input limits | 测试27 | Login name limits | ✓ | Spaces around the name `" alice "` → **200 and normalized to alice** (LDAP caseIgnore semantics ignore leading/trailing spaces; same account); mail as login name → 401; 2000-character name → 401 (fast); unknown Chinese name → 401 |
+| H half-dead directory | 测试28 | Port open but service frozen (`docker pause`) | ✓ | Login waits **exactly the configured timeout=10** (we saw 10.02 s) and then returns 401; after `unpause` → 200 in 0.07 s |
+| I sessions | 测试29 | refresh token × revocation | ✓ | See §5.3: the old access token stays valid (200, fail-open); **a refresh re-reads the directory** — the refreshed token gets 403 at once. The fail-open window ends at refresh time |
+| I sessions | 测试30 | User deleted from the directory, old token | ✓ | We made uid=temp-ghost, logged in (200), deleted the entry → the old token still answers 403 (login valid, not 401); a new login gives 401 |
+| J directory policy | 测试31 | Password-policy lockout (3 wrong tries lock for 60 s) | ✓ | See §5.3: after 3 wrong passwords, **even the correct password is rejected (401)** — directory-side lockout, different from the 429 of the rate limit; after 60 s it unlocks itself (200) |
+| K service life cycle | 测试32 | Old JWT after a server restart | ✓ | After `systemctl restart gns3`, the old token still answers **403 (not 401)** — the login stays valid, the signing key survives the restart; a new login gives 200 |
+
+Result: **all 9 extra tests passed.**
+
+### 5.2 How we ran it (short)
+
+```bash
+# 测试24: replace the svc-gns3 userPassword twice (break it, then restore the original SSHA hash)
+# 测试25/27: boundary JSON bodies at the authenticate endpoint (empty password / " alice " / carol@example.org / 2000 chars / Chinese name)
+
+# 测试26: LDIF value in base64 (userPassword:: <b64>) to avoid escaping; then restore the original SSHA string
+
+# 测试28: docker pause GNS3.OpenLDAP-1.<project-id> → login probe → docker unpause → test again
+
+# 测试30: ldapadd uid=temp-ghost (plain-text password gns3test also works) → login and save token
+#         → ldapdelete uid=temp-ghost → probe old token + new login
+
+# 测试32: save an alice token → ssh VM21 'sudo systemctl restart gns3' → wait for the service
+#         → probe old token + new login
+```
+
+### 5.3 Two behaviors worth noting
+
+**测试29 refresh × revocation** (full order):
+
+```text
+1) carol logs in (200); we save access_token + refresh_token
+2) before the change, the access token on /v3/access/users → 200 (Administrators role)
+3) we remove carol from gns3-admins and gns3-testers in the directory
+4) the old access token → 200 (fail-open: an issued token does not re-check the directory)
+5) a fresh login → falls back to Users; its token gets 403
+6) POST /v3/access/users/refresh {"refresh_token":…} → 200, new access token
+   → the new token gets 403 (the refresh re-calculates roles from the directory!)
+7) member restored → fresh login 200, probe 200
+```
+
+Meaning: an issued access token stays valid until it expires (fail-open), but **every refresh re-calculates**. The role catches up at refresh time, not only at login.
+
+**测试31 password-policy lockout** (how to set it up in this environment: the image already ships the `cn={4}ppolicy` schema, no import needed; load module `ppolicy.so`, add `olcOverlay=ppolicy` on `{1}mdb`, create a policy entry (`organizationalRole` structural class + `pwdPolicy` auxiliary class, pwdLockout=TRUE / pwdMaxFailure=3 / pwdLockoutDuration=60), and attach it to the user with `pwdPolicySubentry`):
+
+```text
+3 wrong passwords → 401 × 3
+4th try = correct password → 401 (directory-side lockout; the rate limit needs 5 tries, so this 401 comes before any 429)
+wait 61 s (pwdLockoutDuration=60) → correct password → 200 (self-unlock; a successful bind resets the failure count)
+```
+
+Meaning: the directory password policy and the GNS3 rate limit are **two independent protection layers** — the lockout makes even the correct password fail (401), and it triggers before the rate limit. It unlocks itself, no admin work needed.
+
+### 5.4 What stayed in the environment
+
+- 测试24/26: passwords restored to the original hashes and re-checked. 测试30: the temp entry is deleted. 测试29: group members restored (Administrators=[bob,carol,erin] verified).
+- 测试31 cleanup: no overlay, no policy entry, no subentry left. The `olcModuleLoad: {2}ppolicy.so` line stays (OpenLDAP does not allow removing a module load at runtime, error 80; without an overlay it does nothing; the `cn={4}ppolicy` schema comes with the image).
+- 测试32: the service was restarted and runs normally (/v3/version answers).
