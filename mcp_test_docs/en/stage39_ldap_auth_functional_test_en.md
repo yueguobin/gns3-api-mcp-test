@@ -5,9 +5,9 @@
 
 | Item | Content |
 |---|---|
-| Test date | 2026-11-26 |
+| Test date | 2026-11-26 (main matrix + extra tests 24–32); 2026-11-27 (Test 33, API key life cycle) |
 | System under test | gns3-server **3.1.0.dev8** on VM21 (LDAP authentication, build from PR #3103) together with **OpenLDAP-1** (osixia/openldap:2.6.15, `ldap://ldap.example.org:3890` / `ldaps://:6360`, IP 192.168.101.31) |
-| Test scope | **Functional test matrix, 23 items**: login (6) / groups and roles (6) / TLS (4) / outage and recovery (5) / admin and diagnostics (2); **plus 9 extra tests from the same day** (broken bind_dn, input limits, half-dead directory timeout, refresh token × revocation, deleted user, password-policy lockout, service restart — see §5) |
+| Test scope | **Functional test matrix, 23 items**: login (6) / groups and roles (6) / TLS (4) / outage and recovery (5) / admin and diagnostics (2); **plus 10 extra tests** (Tests 24–33: broken bind_dn, input limits, half-dead directory timeout, refresh token × revocation, deleted user, password-policy lockout, service restart, API key × LDAP revocation — see §5) |
 | Test method | **Black-box functional tests**: REST API calls (curl and scripts), LDAP commands from the test host, MCP `node_stop` / `node_start`. This report only describes what the features do. It does not discuss code. |
 | Setup | The full configuration is in **§0.2 and §0.3** (all commands included). Test scripts: `labs/pr3103-retest-scripts/`. Config check: §0.4. |
 | Result mark | ✓ pass — **all 23 items passed** |
@@ -429,9 +429,9 @@ curl -X POST http://192.168.101.21/v3/settings/ldap/test -H "Authorization: Bear
 
 After the tests, the config stays in its normal state: StartTLS + verify_cert=True + the two group mappings. No change was left behind in the environment.
 
-## 5. Extra tests (same day, 9 more scenarios)
+## 5. Extra tests (10 more scenarios)
 
-We also tested 9 more common scenarios. The test numbers continue from 24 to 32.
+We also tested 10 more common scenarios (Tests 24–32 on 2026-11-26, Test 33 on 2026-11-27). The test numbers continue from 24 to 33.
 
 ### 5.1 Results table
 
@@ -446,8 +446,9 @@ We also tested 9 more common scenarios. The test numbers continue from 24 to 32.
 | I sessions | Test 30 | User deleted from the directory, old token | ✓ | We made uid=temp-ghost, logged in (200), deleted the entry → the old token still answers 403 (login valid, not 401); a new login gives 401 |
 | J directory policy | Test 31 | Password-policy lockout (3 wrong tries lock for 60 s) | ✓ | See §5.3: after 3 wrong passwords, **even the correct password is rejected (401)** — directory-side lockout, different from the 429 of the rate limit; after 60 s it unlocks itself (200) |
 | K service life cycle | Test 32 | Old JWT after a server restart | ✓ | After `systemctl restart gns3`, the old token still answers **403 (not 401)** — the login stays valid, the signing key survives the restart; a new login gives 200 |
+| L API key | Test 33 | API key life cycle after LDAP revocation / user deletion | ✓ | See §5.3: after LDAP revocation (member removed) or even **user deletion** in the directory, the key still works (key login never touches the directory); the rights follow the user's next login (200 → 403 → back to 200); the key dies only when the local user record is deleted (401) |
 
-Result: **all 9 extra tests passed.**
+Result: **all 10 extra tests passed.**
 
 ### 5.2 How we ran it (short)
 
@@ -493,8 +494,29 @@ wait 61 s (pwdLockoutDuration=60) → correct password → 200 (self-unlock; a s
 
 Meaning: the directory password policy and the GNS3 rate limit are **two independent protection layers** — the lockout makes even the correct password fail (401), and it triggers before the rate limit. It unlocks itself, no admin work needed.
 
+**Test 33 API key × LDAP revocation** (2026-11-27; full order):
+
+```text
+1) carol (Administrators role) logs in → POST /v3/access/api-keys creates her own key
+   (201; the key belongs to the current user, and the full value is shown only once)
+2) the key on /v3/access/users → 200 (admin rights)
+3) we remove carol from all mapped groups in the directory (LDAP revocation)
+4) the key still gives 200 (key login never touches the directory: DB key lookup → bcrypt check → local user is_active)
+5) the user logs in once more (role re-calculated to Users) → the SAME key now gets 403
+   — rights are read from the user record in the controller DB (rewritten at login),
+     not frozen at key-creation time
+6) member restored + fresh login → the same old key gives 200 again (rights flow back)
+7) variant: temp user temp-ghost2 creates a key → we delete the user from the directory
+   → the key still answers 403 (login still valid; 403 is the normal Users-role answer on an admin endpoint)
+8) the local user record is deleted by an admin (DELETE /v3/access/users/{id})
+   → the key gives 401 (the only real death point)
+```
+
+Meaning: an LDAP-side revocation (member removed, or the user deleted) **has no direct effect on an API key** — the key's rights are whatever the user's last login wrote into the DB, and the role catches up at the next login (same rule as JWT refresh). A key really dies only in three ways: the local user is deleted or disabled, the key is revoked, or the key is deleted. Operation note: **when you disable an account in LDAP, also clean up the local user or its API keys** — otherwise the key stays valid as long as that user never logs in again.
+
 ### 5.4 What stayed in the environment
 
 - Tests 24/26: passwords restored to the original hashes and re-checked. Test 30: the temp entry is deleted. Test 29: group members restored (Administrators=[bob,carol,erin] verified).
+- Test 33: both test keys are deleted; the temp-ghost2 directory entry and local user record are deleted; carol's membership is restored and a fresh login verified (200).
 - Test 31 cleanup: no overlay, no policy entry, no subentry left. The `olcModuleLoad: {2}ppolicy.so` line stays (OpenLDAP does not allow removing a module load at runtime, error 80; without an overlay it does nothing; the `cn={4}ppolicy` schema comes with the image).
 - Test 32: the service was restarted and runs normally (/v3/version answers).
