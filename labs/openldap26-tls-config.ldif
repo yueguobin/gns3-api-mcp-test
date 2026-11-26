@@ -1,0 +1,21 @@
+# osixia/openldap 2.6 TLS activation — olcTLS* must go on the cn=config GLOBAL
+# entry. Applying them to the frontend DB entry fails with error 65 (object
+# class violation). Self-signed setup: CACertificateFile points at the same
+# server.crt. Paths are in-container paths inside the persistent volume
+# /var/lib/openldap/openldap-data (verified 2026-11-26: server.crt 1192 B,
+# server.key 1704 B, owner ldap:911, key mode 600).
+#
+# Fresh environment: apply as-is (add). If the attributes already exist, change
+# "add:" to "replace:" (or delete first) or slapd returns error 20.
+#
+# Apply: ldapmodify -x -H ldap://192.168.101.31:3890 -D "cn=admin,cn=config" -w config -f openldap26-tls-config.ldif
+dn: cn=config
+changetype: modify
+add: olcTLSCertificateFile
+olcTLSCertificateFile: /var/lib/openldap/openldap-data/tls/server.crt
+-
+add: olcTLSCertificateKeyFile
+olcTLSCertificateKeyFile: /var/lib/openldap/openldap-data/tls/server.key
+-
+add: olcTLSCACertificateFile
+olcTLSCACertificateFile: /var/lib/openldap/openldap-data/tls/server.crt

@@ -81,3 +81,89 @@ PR 3103 的 LDAP 认证核心声明在本 OpenLDAP 环境**全部实测成立（
 **新观察**：①LDAP **连接失败**导致的登录失败同样计入限速窗口（复测恢复期 alice 连续撞 429，首测只验证过错密码计数）——目录故障期间对同一用户名的重试会吃限速，语义仍属正确（保护目录/防爆破），但排障时需知晓。②容器重建后目录数据完整（持久卷生效），终态组员核对无漂移。
 
 **复测期间插曲（已解决）**：node_start 触发容器重建，注入的 init.sh 来自本机控制器运行代码——工作树切到 `fix/ldap-sync-rbac-snapshot` 分支后 SU_SHELL_ARG 修复不在其祖先里（修复本体已进上游 **PR #3108**，commit d20b908f7），容器重建即复发 su/nologin 崩溃循环。恢复修复 + 重启 gns3server 后复现消失。**教训：切分支/重部署后跑 docker 节点前，先核对 init.sh 是否带 SU_SHELL_ARG（发现 4 的修复），否则容器重建即崩。**
+
+## 6. 复现操作手册（命令级）
+
+> 2026-11-26 本机整机重启后，以下步骤**全量重跑验证过**（冷启动级复现），输出均为当日实测采集。辅助脚本固化在 `labs/pr3103-retest-scripts/`（README 含顺序与注意事项）；引用的 LDIF/补丁全部在仓库 `labs/` 下。英文版同内容见 EN 报告 §4。
+
+### 6.0 前置
+
+- **GNS3 docker 包装已修**（init.sh 带非 root USER 修复，上游 #3108）。切分支/重部署控制器后、启动 docker 节点前必查：
+  ```bash
+  grep -c SU_SHELL_ARG ~/myCode/GNS3/gns3-server/gns3server/compute/docker/resources/init.sh \
+                       ~/.local/share/GNS3/docker/init.sh   # 两处都须 >=1
+  ```
+  未修的包装会让 2.6.x 容器每次重建都崩循环（`This account is not available`）。
+
+### 6.1 目录节点搭建（一次性）
+
+**A1 建节点**：GNS3 内置 OpenLDAP appliance v2 模板（template_id `85b0a871-…`），local compute。生效参数（API 实测）：image `osixia/openldap:2.6.15`；environment 四项 `OPENLDAP_BOOTSTRAP_ORGANIZATION=Example Inc.` / `OPENLDAP_BOOTSTRAP_SUFFIX=dc=example,dc=org` / `OPENLDAP_BOOTSTRAP_DATA_ROOT_PASSWORD_HASHED=admin` / `OPENLDAP_BOOTSTRAP_CONFIG_ROOT_PASSWORD_HASHED=config`；extra volumes 三项 `/var/lib/openldap/openldap-data`、`/etc/openldap/slapd.d`、`/var/lib/openldap/openldap-backups`；监听 **3890/6360**（非 389/636）。bootstrap 仅**首次空库启动**生效；产出的凭据：目录管理员 `cn=admin,dc=example,dc=org`/`admin`，配置管理员 `cn=admin,cn=config`/`config`。
+
+**A2 启动节点**（GUI 右键 Start 或 MCP `node_start`），记下容器 IP（本环境 192.168.101.31）。
+
+**A3 导入测试树**（15 条目，`-c` 幂等）：
+```bash
+ldapadd -c -x -H ldap://192.168.101.31:3890 -D "cn=admin,dc=example,dc=org" -w admin \
+        -f labs/openldap-gns3-pr-test.ldif
+# 校验：people 下 grep -c "^dn:" -> 7；ou=gns3 下 groupOfNames -> 4
+```
+
+**A4 ACL 补丁（必做）**：v2 默认 `{2}` 白名单缺 `member`，组解析搜不到任何组：
+```bash
+ldapmodify -x -H ldap://192.168.101.31:3890 -D "cn=admin,cn=config" -w config \
+           -f labs/openldap26-acl-member-read.ldif
+# 校验：olcDatabase={1}mdb 的 olcAccess {2} 里必须含 ...,member
+```
+（1.5.0 上还需 `labs/openldap-acl-users-read.ldif`——默认 ACL 会把 bind_dn 的搜索拦成 `32 No such object`。）
+
+**A5 TLS 材料**：自签证书（CN+SAN 是 ldap3 校验对象）：
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+  -keyout server.key -out server.crt -subj "/CN=192.168.101.31" \
+  -addext "subjectAltName=DNS:localhost,DNS:ldap.example.org,IP:192.168.101.31"
+```
+装进**运行中**容器的持久卷并挂到 `cn=config` 全局条目：
+```bash
+docker exec GNS3.OpenLDAP-1.<project-id> mkdir -p /var/lib/openldap/openldap-data/tls
+docker cp server.crt GNS3.OpenLDAP-1.<project-id>:/var/lib/openldap/openldap-data/tls/
+docker cp server.key GNS3.OpenLDAP-1.<project-id>:/var/lib/openldap/openldap-data/tls/
+docker exec GNS3.OpenLDAP-1.<project-id> sh -c \
+  'chown 911:911 /var/lib/openldap/openldap-data/tls/*; chmod 600 /var/lib/openldap/openldap-data/tls/server.key'
+ldapmodify -x -H ldap://192.168.101.31:3890 -D "cn=admin,cn=config" -w config \
+           -f labs/openldap26-tls-config.ldif
+```
+实坑两枚：olcTLS* 挂 frontend 库条目 → **error 65**；重复 add 已存在属性 → **error 20**（改 replace）。持久性：证书在数据卷、TLS 配置在配置卷，重启/重建节点均不丢（11-26 重启后实测核验：server.crt 1192B、server.key 1704B、属主 911、key 600）。
+
+**A6 控制器侧（VM21）**：
+```bash
+# 1) 部署 PR #3103 构建（PR head e057ecfa5+），确认修复在部署树里：
+grep -n "get_info" <venv>/gns3server/services/ldap.py        # 期望 get_info=NONE
+# 2) 域名解析（ldap3 backport 拒绝 IP 主机名，发现5）：
+echo "192.168.101.31 ldap.example.org" >> /etc/hosts
+# 3) 信任 lab CA（ldap3 verify_cert=True 走系统信任库）：
+scp server.crt gns3@192.168.101.21:/tmp/gns3-lab-ldap.crt
+ssh gns3@192.168.101.21 'sudo cp /tmp/gns3-lab-ldap.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates'
+```
+`/opt/gns3/server/gns3_server.conf` 的 `[LDAP]` 段全文（API 核验一致）：enabled=True；uri=ldap://ldap.example.org:3890；bind_dn=uid=svc-gns3,ou=people,ou=gns3,dc=example,dc=org；bind_password=svcldap123；base_dn=ou=gns3,dc=example,dc=org；user_search_filter=`(&(objectClass=person)(uid={username}))`；user_attr_username=uid；user_attr_email=mail；user_attr_fullname=cn；group_search_base=ou=gns3,dc=example,dc=org；group_search_filter=`(&(objectClass=groupOfNames)(member={user_dn}))`；group_mapping=`{"gns3-admins":"Administrators","gns3-testers":"Testers"}`；default_group=Users；**start_tls=True；verify_cert=True**；fallback_to_local=True；timeout=10。
+
+重启服务后预检：`curl http://192.168.101.21/v3/version`（→ 3.1.0.dev8）；svc-gns3 bind+搜索 groupOfNames → 4 条。
+
+### 6.2 跑矩阵
+
+全程认证机制：`POST /v3/access/users/authenticate`（JSON）→ Bearer JWT；**settings 端点只认 Bearer**（Basic 被拒）；`PUT /v3/settings` 体形 `{"LDAP": {...}}` 且**必须回传真 bind_password**（GET 回掩码）；每次 PUT 后等 ~5s。
+
+**阶段1 免配置项**（测试1–5、11、12）：`python3 -I labs/pr3103-retest-scripts/01_no_config_tests.py`。实测输出：admin 200；Alice→'alice'；bob/carol/erin/dave/frank 全 200；Administrators=[bob,carol,erin]；Testers=[carol,dave,student-10]；ldap/test success/users_found=5/latency≈14ms；掩码 PASS。
+
+**阶段2 撤销重算**（测试6）：`ldapmodify` 删 carol 的 member（命令见 EN §4 Phase 2 或 labs 脚本 README）→ `02_membership_audit.py` 看到 Administrators=[bob,erin]、Testers 保留；`add: member` 恢复 → 回 [bob,carol,erin]。
+
+**阶段3 TLS 变体 + frank 翻转**（测试9、7；脚本 finally 保证恢复终态）：`python3 -I labs/pr3103-retest-scripts/03_config_flips.py`。实测：verify_cert=False→200；LDAPS 域名→200；LDAPS IP→**401** 负例；frank 升降进出 Administrators。
+
+**阶段4 DR**（测试8、13）：存 alice token（curl 存 /tmp/alice_token.txt）→ GUI/MCP 停 OpenLDAP-1 → 三连 curl：admin 200@0.27s、alice 401@10s、旧 token /v3/projects 200@6ms → 起节点 → `04_dr_recover_wait.py`（本次实测 t+0.1s 即 200；给足 60s 余量）。
+
+**阶段5 限速器**（测试10，放最后——会锁 dave ~60s）：`python3 -I labs/pr3103-retest-scripts/05_rate_limiter.py`。实测：5×401 → 正确密码 429 → 限速期仍 429 → **t+60s 整点解封**。
+
+### 6.3 复跑时的非显然行为
+
+- PUT settings 后重载窗口：`GET /v3/access/groups` 可能 404 数秒（发现2），脚本等 5s 规避。
+- **连接失败**的登录也吃限速窗口——目录故障期同一用户名重试会 429；恢复轮询里的 429 是限速器，不代表目录没起来。
+- 未装 lab CA 的本机做 StartTLS 探测会报 `certificate verify failed (self-signed certificate)`——预期，本环境只有控制器是 TLS 客户端。

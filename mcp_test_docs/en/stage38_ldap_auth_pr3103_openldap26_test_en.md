@@ -96,6 +96,164 @@ Since Python ≥ 3.12 removed `ssl.match_hostname`, ldap3 2.9.1 uses its vendore
 
 The complete 13-item matrix was re-run end-to-end on the 2.6.15 terminal environment (StartTLS + verify_cert=True steady state, both mappings active): **13/13 green**, consistent with the first round. Highlights: revocation strip/restore loop exact ([bob,erin] → [bob,carol,erin]); TLS variants re-verified incl. the IP-uri negative (401); frank flip closed loop; DR timings admin 0.27 s / old token 7 ms / recovery 73 ms; rate limiter unblocked at exactly t+60 s. Full detail in the Chinese report §5 (`mcp_test_docs/zh/阶段38_PR3103-LDAP认证与OpenLDAP联测报告.md`).
 
-## 4. Conclusion
+## 4. Reproduction Runbook
+
+Everything below was re-executed end-to-end on 2026-11-26 after a full host reboot (cold-ish start) — outputs shown are the captured ones. Helper scripts live in [`labs/pr3103-retest-scripts/`](../../labs/pr3103-retest-scripts/README.md); LDIFs and patches referenced here are all in this repository under `labs/`.
+
+### 4.0 Prerequisites
+
+- **GNS3 docker wrapper fixed** (`init.sh` must carry the non-root-USER fix, upstream #3108). After any branch switch or controller redeploy, before starting docker nodes:
+  ```bash
+  grep -c SU_SHELL_ARG ~/myCode/GNS3/gns3-server/gns3server/compute/docker/resources/init.sh \
+                       ~/.local/share/GNS3/docker/init.sh   # both must be >=1
+  ```
+  An unfixed wrapper crash-loops the 2.6.x container (*"This account is not available"*) on every rebuild.
+
+### 4.1 Build the directory node (one-time)
+
+**A1 — create the GNS3 node.** Docker appliance "OpenLDAP" v2 (template `85b0a871-…`), on the local compute. Effective node parameters (verified via API):
+
+| Parameter | Value |
+|---|---|
+| image | `osixia/openldap:2.6.15` |
+| environment | `OPENLDAP_BOOTSTRAP_ORGANIZATION=Example Inc.` · `OPENLDAP_BOOTSTRAP_SUFFIX=dc=example,dc=org` · `OPENLDAP_BOOTSTRAP_DATA_ROOT_PASSWORD_HASHED=admin` · `OPENLDAP_BOOTSTRAP_CONFIG_ROOT_PASSWORD_HASHED=config` |
+| extra volumes | `/var/lib/openldap/openldap-data` · `/etc/openldap/slapd.d` · `/var/lib/openldap/openldap-backups` |
+| listeners | 3890 (ldap/StartTLS), 6360 (LDAPS) — **not** 389/636 |
+
+Bootstrap env applies **on first start only** (empty data+config). Credentials produced: directory admin `cn=admin,dc=example,dc=org` / `admin`; config admin `cn=admin,cn=config` / `config`.
+
+**A2 — start the node** (GNS3 GUI, or MCP `node_start`), note its IP (`192.168.101.31` here).
+
+**A3 — import the test tree** (15 entries; `-c` makes re-runs idempotent):
+```bash
+ldapadd -c -x -H ldap://192.168.101.31:3890 -D "cn=admin,dc=example,dc=org" -w admin \
+        -f labs/openldap-gns3-pr-test.ldif
+# verify
+ldapsearch -x -H ldap://192.168.101.31:3890 -D "cn=admin,dc=example,dc=org" -w admin \
+  -b "ou=people,ou=gns3,dc=example,dc=org" "(objectClass=inetOrgPerson)" dn | grep -c "^dn:"   # -> 7
+ldapsearch -x -H ldap://192.168.101.31:3890 -D "cn=admin,dc=example,dc=org" -w admin \
+  -b "ou=gns3,dc=example,dc=org" "(objectClass=groupOfNames)" dn | grep -c "^dn:"             # -> 4
+```
+
+**A4 — ACL patches (mandatory).** The v2 default ACL `{2}` whitelist lacks `member`, so group resolution returns nothing. Apply and verify:
+```bash
+ldapmodify -x -H ldap://192.168.101.31:3890 -D "cn=admin,cn=config" -w config \
+           -f labs/openldap26-acl-member-read.ldif
+ldapsearch -x -H ldap://192.168.101.31:3890 -D "cn=admin,cn=config" -w config \
+  -b "olcDatabase={1}mdb,cn=config" -s base olcAccess | grep "{2}"    # must contain ...,member
+```
+(On 1.5.0 additionally: `labs/openldap-acl-users-read.ldif` — stock ACL blocks the bind_dn's searches with `32 No such object`.)
+
+**A5 — TLS material.** Generate a self-signed cert (CN + SAN are what ldap3 checks):
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+  -keyout server.key -out server.crt -subj "/CN=192.168.101.31" \
+  -addext "subjectAltName=DNS:localhost,DNS:ldap.example.org,IP:192.168.101.31"
+```
+Install into the persistent volume of the **running** container and activate on the `cn=config` global entry:
+```bash
+docker exec GNS3.OpenLDAP-1.<project-id> mkdir -p /var/lib/openldap/openldap-data/tls
+docker cp server.crt GNS3.OpenLDAP-1.<project-id>:/var/lib/openldap/openldap-data/tls/
+docker cp server.key GNS3.OpenLDAP-1.<project-id>:/var/lib/openldap/openldap-data/tls/
+docker exec GNS3.OpenLDAP-1.<project-id> sh -c \
+  'chown 911:911 /var/lib/openldap/openldap-data/tls/*; chmod 600 /var/lib/openldap/openldap-data/tls/server.key'
+ldapmodify -x -H ldap://192.168.101.31:3890 -D "cn=admin,cn=config" -w config \
+           -f labs/openldap26-tls-config.ldif
+```
+Gotchas (both hit for real): `olcTLS*` on the frontend DB entry → **error 65**; re-applying existing attrs → **error 20** (use `replace:`). Persistence: cert lives in the data volume, TLS config in the config volume — both survive reboots and node rebuilds (verified 11-26 post-reboot).
+
+**A6 — controller side (VM21).**
+```bash
+# 1) deploy the PR #3103 build (repo gns3-server, PR head e057ecfa5+ or later)
+#    then confirm the get_info=NONE fix is in the deployed tree:
+grep -n "get_info" <venv>/gns3server/services/ldap.py        # expect: get_info=NONE
+# 2) hostname resolution (ldap3 backport rejects IP hostnames, Finding 5):
+echo "192.168.101.31 ldap.example.org" >> /etc/hosts
+# 3) trust the lab CA (ldap3 verify_cert=True uses the system store):
+scp server.crt gns3@192.168.101.21:/tmp/gns3-lab-ldap.crt
+ssh gns3@192.168.101.21 'sudo cp /tmp/gns3-lab-ldap.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates'
+```
+Full `[LDAP]` section of `/opt/gns3/server/gns3_server.conf` (verbatim, API-verified):
+```ini
+[LDAP]
+enabled = True
+uri = ldap://ldap.example.org:3890
+bind_dn = uid=svc-gns3,ou=people,ou=gns3,dc=example,dc=org
+bind_password = svcldap123
+base_dn = ou=gns3,dc=example,dc=org
+user_search_filter = (&(objectClass=person)(uid={username}))
+user_attr_username = uid
+user_attr_email = mail
+user_attr_fullname = cn
+group_search_base = ou=gns3,dc=example,dc=org
+group_search_filter = (&(objectClass=groupOfNames)(member={user_dn}))
+group_mapping = {"gns3-admins": "Administrators", "gns3-testers": "Testers"}
+default_group = Users
+start_tls = True
+verify_cert = True
+fallback_to_local = True
+timeout = 10
+```
+Restart the service, then preflight:
+```bash
+curl -s http://192.168.101.21/v3/version          # -> {"version":"3.1.0.dev8",...}
+ldapsearch -x -H ldap://192.168.101.31:3890 -D "uid=svc-gns3,ou=people,ou=gns3,dc=example,dc=org" \
+  -w svcldap123 -b "ou=gns3,dc=example,dc=org" "(objectClass=groupOfNames)" dn | grep -c "^dn:"  # -> 4
+```
+
+### 4.2 Run the matrix
+
+Auth mechanics used throughout: `POST /v3/access/users/authenticate` (JSON) → Bearer JWT; **settings endpoints require Bearer** (Basic rejected); `PUT /v3/settings` takes `{"LDAP": {...}}` with the **real `bind_password`** re-sent (GET masks it); allow ~5 s after each PUT.
+
+**Phase 1 — no-config items** (tests 1–5, 11, 12):
+```bash
+python3 -I labs/pr3103-retest-scripts/01_no_config_tests.py
+```
+Captured output (2026-11-26): admin 200 · `Alice`→`'alice'` · bob/carol/erin/dave/frank all 200 · Administrators=[bob,carol,erin] · Testers=[carol,dave,student-10] · ldap/test `success, bind_successful=true, users_found=5, latency_ms≈14` · mask `'**********'` PASS.
+
+**Phase 2 — revocation recalc** (test 6):
+```bash
+printf 'dn: cn=gns3-admins,ou=groups,ou=gns3,dc=example,dc=org\nchangetype: modify\ndelete: member\nmember: uid=carol,ou=people,ou=gns3,dc=example,dc=org\n' \
+  | ldapmodify -x -H ldap://192.168.101.31:3890 -D "cn=admin,dc=example,dc=org" -w admin
+python3 -I labs/pr3103-retest-scripts/02_membership_audit.py    # -> Administrators=[bob,erin], Testers keeps carol
+# same ldapmodify with 'add: member' to restore; audit -> Administrators=[bob,carol,erin]
+```
+
+**Phase 3 — TLS variants + frank flip** (tests 9, 7; script restores terminal state in `finally`):
+```bash
+python3 -I labs/pr3103-retest-scripts/03_config_flips.py
+```
+Captured: verify_cert=False → 200 · LDAPS hostname → 200 · LDAPS IP → **401** (negative) · frank in/out of Administrators.
+
+**Phase 4 — DR** (tests 8, 13):
+```bash
+# save a token while the directory is healthy
+curl -s -X POST http://192.168.101.21/v3/access/users/authenticate -H 'Content-Type: application/json' \
+     -d '{"username":"alice","password":"gns3test"}' | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])" \
+     > /tmp/alice_token.txt
+# stop the directory: GNS3 GUI right-click OpenLDAP-1 → Stop, or MCP node_stop
+curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" -X POST http://192.168.101.21/v3/access/users/authenticate \
+     -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin"}'          # 200 ~0.27s
+curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" -X POST http://192.168.101.21/v3/access/users/authenticate \
+     -H 'Content-Type: application/json' -d '{"username":"alice","password":"gns3test"}'       # 401 (~10s timeout path)
+curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" http://192.168.101.21/v3/projects \
+     -H "Authorization: Bearer $(cat /tmp/alice_token.txt)"                                    # 200 ~7ms (fail-open)
+# start the directory again, then:
+python3 -I labs/pr3103-retest-scripts/04_dr_recover_wait.py     # -> alice 200 (instant here; allow 60s+)
+```
+
+**Phase 5 — rate limiter** (test 10, run last — blocks `dave` for ~60 s):
+```bash
+python3 -I labs/pr3103-retest-scripts/05_rate_limiter.py
+```
+Captured: 5×401 → 429 (even with the correct password) → still 429 → **200 at t+60 s** exactly.
+
+### 4.3 Known non-obvious behaviors while re-running
+
+- `PUT /v3/settings` reload window: `GET /v3/access/groups` can 404 for a few seconds right after a PUT (Finding 2) — the scripts' 5 s wait avoids it.
+- Failed logins caused by LDAP **connection failures** also consume the rate-limit window — during an outage, retries for the same username hit 429; the recovery poller's 429s are this, not proof the directory is still down.
+- Local (non-controller) machines without the lab CA will see `certificate verify failed (self-signed certificate)` on StartTLS probes — expected; only the controller is the TLS client in this setup.
+
+## 5. Conclusion
 
 All core claims of PR #3103's LDAP authentication **hold in this OpenLDAP environment (13/13, retested end-to-end, incl. the TLS surface)**: JIT provisioning, group mapping, dual-group membership, revocation recalculation, role flips, case normalization, DR fallback, rate limiting, password masking, the diagnostic endpoint, and StartTLS/LDAPS with `verify_cert` both ways plus a negative case. One blocking compatibility defect (Finding 1) was root-caused, fixed (`get_info=NONE`), verified and reported upstream; the first-round TLS ⚠️ was attributed to the aged 1.5.0 image (Finding 3) and went green after the 2.6.15 migration. By-products: GNS3 docker wrapper su/nologin defect (Finding 4, fixed upstream as #3108) and the ldap3 IP-uri hostname limitation (Finding 5, doc-note suggested). Reproduction requires the environment prerequisites in §0 — most notably the `member` ACL patch, the hostname-based `uri`, CA trust on the controller, and a wrapper-fixed `init.sh`.
