@@ -42,24 +42,24 @@ ldapadd -c -x -H ldap://192.168.101.31:3890 -D "cn=admin,dc=example,dc=org" -w a
         -f labs/openldap-gns3-pr-test.ldif
 ```
 
-The full LDIF file (same as `labs/openldap-gns3-pr-test.ldif` in this repo):
+The full LDIF file (the entry data is the same as `labs/openldap-gns3-pr-test.ldif` in this repo; the comments are translated into English):
 
 ```ldif
-# GNS3 LDAP PR 测试目录数据 (gns3-server merge-ldap-3103 分支)
-# 目标树: ou=gns3,dc=example,dc=org —— 与节点里已有的旧演示树(ou=people/ou=groups/ou=devices)隔离
-# 应用: ldapadd -x -h 192.168.101.31 -D cn=admin,dc=example,dc=org -w admin -f openldap-gns3-pr-test.ldif
+# Directory data for the GNS3 LDAP PR test (gns3-server merge-ldap-3103 branch)
+# Target tree: ou=gns3,dc=example,dc=org — kept separate from the old demo tree in the node (ou=people/ou=groups/ou=devices)
+# Apply with: ldapadd -x -h 192.168.101.31 -D cn=admin,dc=example,dc=org -w admin -f openldap-gns3-pr-test.ldif
 #
-# 登录用户(7个)统一密码: gns3test
-# 服务账号 svc-gns3 密码: svcldap123 (gns3_server.conf bind_dn 用, 读权限即可)
+# All login users (7) share the same password: gns3test
+# Service account svc-gns3 password: svcldap123 (used as bind_dn in gns3_server.conf; needs read rights only)
 #
-# 组成员矩阵:
-#   all-staff        : alice                (故意不映射 -> JIT + default_group fallback)
-#   gns3-superadmins : frank                (superadmin_groups -> is_superadmin 升/降翻转)
-#   gns3-admins      : bob, carol, erin     (映射 -> GNS3 Administrators)
-#   gns3-testers     : carol, dave          (映射 -> GNS3 Testers; carol 双组/受管组重算)
-#   Alice (大写A)     : 无组                 (大小写陷阱用例)
+# Group member matrix:
+#   all-staff        : alice                (no mapping on purpose -> JIT + default_group fallback)
+#   gns3-superadmins : frank                (for the superadmin role add/remove flip test)
+#   gns3-admins      : bob, carol, erin     (mapped -> GNS3 Administrators)
+#   gns3-testers     : carol, dave          (mapped -> GNS3 Testers; carol is in two groups / managed-group recalc)
+#   Alice (capital A): no group             (name-case test case)
 
-# ---- 容器 OU ----
+# ---- container OUs ----
 dn: ou=gns3,dc=example,dc=org
 objectClass: organizationalUnit
 ou: gns3
@@ -72,7 +72,7 @@ dn: ou=groups,ou=gns3,dc=example,dc=org
 objectClass: organizationalUnit
 ou: groups
 
-# ---- 服务账号 (bind_dn) ----
+# ---- service account (bind_dn) ----
 dn: uid=svc-gns3,ou=people,ou=gns3,dc=example,dc=org
 objectClass: inetOrgPerson
 uid: svc-gns3
@@ -80,7 +80,7 @@ cn: GNS3 Service Account
 sn: svc-gns3
 userPassword: {SSHA}ZrO9juJXB8yVCfROEy1DjMjVi1IDe3pe
 
-# ---- 用户 ----
+# ---- users ----
 dn: uid=alice,ou=people,ou=gns3,dc=example,dc=org
 objectClass: inetOrgPerson
 uid: alice
@@ -137,7 +137,7 @@ sn: Super
 mail: frank@example.org
 userPassword: {SSHA}Px3LFp1dmanIQSpzr4sUEaDuq/GC7+fl
 
-# ---- 组 (groupOfNames, 对应代码默认 group_search_filter) ----
+# ---- groups (groupOfNames, matches the default group_search_filter) ----
 dn: cn=all-staff,ou=groups,ou=gns3,dc=example,dc=org
 objectClass: groupOfNames
 cn: all-staff
