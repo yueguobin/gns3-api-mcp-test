@@ -46,7 +46,7 @@ The full LDIF file (the entry data is the same as `labs/openldap-gns3-pr-test.ld
 
 ```ldif
 # Directory data for the GNS3 LDAP PR test (gns3-server merge-ldap-3103 branch)
-# Target tree: ou=gns3,dc=example,dc=org — kept separate from the old demo tree in the node (ou=people/ou=groups/ou=devices)
+# Target tree: ou=gns3,dc=example,dc=org - kept separate from the old demo tree in the node (ou=people/ou=groups/ou=devices)
 # Apply with: ldapadd -x -h 192.168.101.31 -D cn=admin,dc=example,dc=org -w admin -f openldap-gns3-pr-test.ldif
 #
 # All login users (7) share the same password: gns3test
