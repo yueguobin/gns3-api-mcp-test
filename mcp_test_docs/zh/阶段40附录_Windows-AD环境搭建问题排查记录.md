@@ -5,7 +5,7 @@
 | 记录日期 | 2026-11-27 |
 | 环境 | GNS3-AD：Windows Server 2022 Standard **Core**（10.0.20348），192.168.101.32，单 DC 域 `ad.example.org`；管理通道 WinRM 5985 + pywinrm（NTLM） |
 | 性质 | **环境搭建问题**，与 gns3-server / PR #3103 无关。记录现象、排查路径、根因与修复，供复现者参考 |
-| 关联 | 主报告：`阶段40_PR3103-LDAP认证Windows-AD联测报告.md`；脚本：`labs/pr3103-ad-test-scripts/`（按执行顺序固化，含诊断脚本） |
+| 关联 | 主报告：`阶段40_PR3103-LDAP认证Windows-AD联测报告.md`；脚本：`labs/pr3103-ad-test-scripts/`（按执行顺序固化，含诊断脚本）；**两目录问题对照汇总**：`附录_LDAP联测问题排查汇总_OpenLDAP与WindowsAD.md` |
 
 ---
 

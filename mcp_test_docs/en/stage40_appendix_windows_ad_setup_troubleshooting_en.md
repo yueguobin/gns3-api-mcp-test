@@ -8,7 +8,7 @@
 | Date | 2026-11-27 |
 | Environment | GNS3-AD: Windows Server 2022 Standard **Core** (10.0.20348), 192.168.101.32, single DC for domain `ad.example.org`; management channel WinRM 5985 + pywinrm (NTLM) |
 | Nature | **Environment setup problems only.** They have nothing to do with gns3-server or PR #3103. We record the symptoms, how we narrowed them down, the root causes and the fixes, so others can reproduce the setup faster |
-| Related | Main report: `mcp_test_docs/en/stage40_ldap_auth_windows_ad_test_en.md`; scripts: `labs/pr3103-ad-test-scripts/` (kept in run order, including the diagnostic scripts) |
+| Related | Main report: `mcp_test_docs/en/stage40_ldap_auth_windows_ad_test_en.md`; scripts: `labs/pr3103-ad-test-scripts/` (kept in run order, including the diagnostic scripts); **both-directories comparison**: `mcp_test_docs/en/appendix_ldap_troubleshooting_summary_openldap_and_ad.md` |
 
 ---
 
