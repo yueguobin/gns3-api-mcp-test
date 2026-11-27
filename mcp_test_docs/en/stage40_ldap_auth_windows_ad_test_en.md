@@ -7,10 +7,10 @@
 |---|---|
 | Test date | 2026-11-27 |
 | System under test | gns3-server **3.1.0.dev8** on VM21 (LDAP authentication, build from PR #3103) together with **GNS3-AD** (Windows Server 2022 Standard **Core**, 10.0.20348, IP 192.168.101.32, domain `ad.example.org`, single DC `GNS3-AD.ad.example.org`) |
-| Test scope | **Functional test matrix on Windows AD, 16 items**: login and diagnostics (7) / group mapping (4) / account state (2) / TLS (2) / config restore (1) |
+| Test scope | **Functional test matrix on Windows AD, 16 items**: login and diagnostics (7) / group mapping (4) / account state (2) / TLS (2) / config restore (1); **plus 8 extra tests** (Tests 17–24: outage and recovery / rate limiter / refresh × member removal / API key × AD disable / broken bind_dn / input boundaries / AD native lockout / ldap/test variants — see §5) |
 | Test method | **Black-box functional tests**: REST API calls (scripts), `ldap*` and `openssl` commands from the test host, WinRM/PowerShell as the management channel. This report only describes what the features do and how to set things up. It does not discuss code. |
 | Setup | The full configuration is in **§0.2 and §0.3** (all commands included). Scripts: `labs/pr3103-ad-test-scripts/` (README shows the run order). Config check: §0.4. |
-| Result mark | ✓ pass — **all 16 items passed**. Note: in Test 2 the first try of svc-gns3 failed with 401 because of a wrong password in our test script. With the right password it passed (see §2 note). |
+| Result mark | ✓ pass — **main matrix 16/16 + extra tests 8/8, all passed**. Note: in Test 2 the first try of svc-gns3 failed with 401 because of a wrong password in our test script. With the right password it passed (see §2 note). |
 | Setup problems | The 5 problems found while building the AD environment (StartTLS 52 / hanging AD module / password policy / management notes / test-script typo) are in a **separate document**: `mcp_test_docs/en/stage40_appendix_windows_ad_setup_troubleshooting_en.md` |
 
 Relation to Stage 39: Stage 39 tested PR #3103 against OpenLDAP 2.6.15 (23 + 10 items). This stage repeats the same test tree and the core scenarios on **Windows AD** (the directory type that this PR mainly targets). Only the directory-specific config fields change (see the diff table in §0.3); everything else stays the same.
@@ -276,8 +276,41 @@ Directory-outage behavior, rate limiting (5 tries → 429 → unblock at t+60s),
 
 ## 4. Conclusion
 
-- PR #3103 passes **16/16** on Windows AD (Server 2022 Core, single DC): logins, group mapping (including native memberOf), superadmin flip, AD account state, LDAPS and StartTLS with certificate-check negative cases, and config restore — all consistent with the OpenLDAP side.
+- PR #3103 passes on Windows AD (Server 2022 Core, single DC): main matrix **16/16** + extra tests **8/8** — logins, group mapping (including native memberOf), superadmin flip, AD account state, LDAPS and StartTLS with certificate-check negative cases, config restore, outage/rate-limiter/refresh/API-key life cycle — all consistent with the OpenLDAP side (down to the latency shape: admin local escape 271 ms vs OpenLDAP 270 ms; a login during the outage waits exactly timeout=10).
 - Moving from OpenLDAP to AD changes only **6 fields** (diff table in §0.3). All are directory-side form differences; the controller-side behavior is the same.
 - The setup has three high-value pitfalls (self-signed LDAPS certificate needs Root self-trust + reboot; the AD PowerShell module can hang after a DC reboot; the default password policy blocks lab passwords). The full troubleshooting record is in the **appendix**: `mcp_test_docs/en/stage40_appendix_windows_ad_setup_troubleshooting_en.md`. All scripts are kept in run order in `labs/pr3103-ad-test-scripts/`.
 
 Related document: Stage 39 (full matrix on OpenLDAP) `mcp_test_docs/zh/阶段39_PR3103-LDAP认证功能测试报告.md`.
+
+## 5. Extra tests (Tests 17–24)
+
+These close the depth gap with the OpenLDAP side (Stage 39). Scripts: `labs/pr3103-ad-test-scripts/14_ad_extra_matrix.py` (first version) and `16_ad_extra_fix.py` (final version: ADSI direct writes + client-side watchdogs — see §5.2 and appendix problem 2).
+
+### 5.1 Results table
+
+| Group | Test | Scenario | Result | Notes |
+|---|---|---|---|---|
+| D outage | Test 17 | directory outage (netsh blocks 389/636) | ✓ | admin local escape **200 / 271 ms**; old token during outage **403 / 8.8 ms** (fail-open); fresh login during outage 401 (waits exactly timeout=10, measured 10.02 s); after recovery 200 / 68 ms — same numbers as the OpenLDAP side (Stage 39 tests 17–20) |
+| E rate limit | Test 18 | login rate limiter | ✓ | dave 5×401 → 6th try (correct password) **429** → still 429 at t+25 s → **unblocked 200 at t+65 s** — the mechanism does not care about the directory type |
+| F sessions | Test 19 | refresh × member removal | ✓ | bob removed from gns3-admins (5 s settle) → old token 200 (fail-open) → refresh 200 → new token **403** (role re-calculated) → member restored, fresh login 200 — same as OpenLDAP; an immediate refresh ≈1 s after the removal once returned 200 (a small convergence race window, see §5.2) |
+| F sessions | Test 20 | API key × AD disable/removal | ✓ | with bob **disabled in AD, the key still answers 200** (key login never touches the directory); fresh login while disabled 401, after re-enable 200 → same key 200; member removed + fresh login (role → Users) → same key **403** (rights converge at re-login) → restored → 200; **key deletion is owner-only** (see §5.2) |
+| G global fault | Test 21 | broken bind_dn | ✓ | svc-gns3 password broken → alice login 401; restored → 200 (same shape as Stage 39 test 24) |
+| H diagnostics | Test 24 | ldap/test variants | ✓ | wrong bind_password → `{"status":"error","bind_successful":false,"users_found":0}` (21.6 ms); correct → success, users_found=5 (15.5 ms, sample cap) |
+| G input edges | Test 22 | input boundaries | ✓ | special-char password `Gns3!test#2026&<>"` → **200** (JSON API handles it all); empty password 401; **`" alice "` with leading/trailing spaces → 200, folded to the same account** (AD sAMAccountName matching also folds whitespace — same as the OpenLDAP caseIgnore behavior); non-existent Chinese name 401; 2000-char username 401 |
+| C account policy | Test 23 | AD native lockout policy | ✓ | domain lockout threshold=3/60 s: erin 3 wrong → **even the correct password is rejected (401, 46 ms — directory lockout fires before the rate limiter)** → auto-unlock after 60 s (200) → threshold reset to 0, login 200 — mirrors the OpenLDAP ppolicy double-layer shape (Stage 39 test 31) |
+
+Result: **all 8 extra tests passed. AD-side total: 24/24.**
+
+### 5.2 Three behaviors worth noting
+
+**Test 19 — convergence race window**: in the first attempt, a refresh fired ≈1 s after the member removal still returned a token with admin rights (200). The same scenario with a 5 s settle returned 403 for the refreshed token, matching OpenLDAP. So: the refresh convergence itself is identical on both directories, but a refresh fired immediately after a removal can race the change (seen once; not investigated further).
+
+**Test 20 — key deletion is owner-only**: an admin deleting bob's key with his own token got **403** (RBAC refuses cross-user deletion); bob deleting his own key got 204. This is a different path from Stage 39 test 33, where an admin deleted the whole **user record** (which kills the key with 401). The key's own life-cycle operations (revoke/restore/delete) belong to its creator; an admin can only kill a key indirectly by deleting or disabling the **user**.
+
+**Test 23 — policy changes must go through ADSI**: `Set-ADDefaultDomainPasswordPolicy` (AD module / ADWS path) **wedged a second time** on this machine — the server-side shell never returned (>44 minutes) and the pywinrm client `read_timeout` did not fire. Final fix: the AD PowerShell module is **fully dropped** — group operations and policy changes are direct ADSI writes (`Put` + `SetInfo` on the domain/group objects, the local LDAP path, which never hung), and every WinRM call runs under a client-side watchdog (a daemon thread abandoned on join timeout). Full story in appendix problem 2.
+
+### 5.3 What stayed in the environment
+
+- Both test keys from Test 20 are deleted with the owner path (204; bob's key list is empty); bob's membership is restored (Administrators=[bob,carol,erin] verified).
+- dave/erin enabled with original passwords; lockout threshold reset to 0 (duration/observation back to defaults); the firewall block rule is deleted; svc-gns3 password restored (bind verified).
+- After the tests, the controller was restored to the OpenLDAP baseline config and verified (carol 200, Administrators=[bob,carol,erin]).

@@ -95,6 +95,8 @@ Get-Process powershell | Where-Object {
 
 本环境看门狗实测：清理僵尸后 `Get-ADDomain` 立即返回 `ad.example.org`。
 
+> **复发记录（同日补充测试阶段）**：`Set-ADDefaultDomainPasswordPolicy` 再次楔死——服务端 shell 无返回 >44 分钟，且 pywinrm 客户端 `read_timeout` 在本机未生效（调用无限阻塞）。最终处置：**AD PowerShell 模块全部弃用**——组操作与策略改写一律 ADSI 直写（域根/组对象 `Put`+`SetInfo`，本机 LDAP 路径全天零挂死），并为每个 WinRM 调用加**客户端看门狗**（守护线程 join 超时即弃单，见 `labs/pr3103-ad-test-scripts/16_ad_extra_fix.py`）。经验：在这类低配单核 DC 上，能走 ADSI 的就不要走 AD 模块。
+
 ---
 
 ## 问题 3：默认密码策略拒绝测试口令

@@ -22,6 +22,9 @@ GNS3-AD 节点（Windows Server 2022 Standard Core，192.168.101.32）建域 + �
 | 7 | `11_certdiag.ps1` | 证书扩展枚举（暴露 FriendlyName 本地化坑）+ Schannel 事件（36886 每 10s） | 定位证据 |
 | 8 | `12_certfix.ps1` | OID 原值核对证书（SAN/EKU/私钥齐全）+ **导入 LocalMachine\Root 自信任** | 补上链信任 |
 | 9 | `13_reboot_matrix.sh` | 再重启（LSASS 重扫）→ 轮询 StartTLS 变绿 → openssl 验 LDAPS → **执行 `09_ad_matrix.py` 全矩阵** | StartTLS TLSv1.3，矩阵 16 项全过 |
+| 10 | `14_ad_extra_matrix.py` | 补充测试 17–24 首版（容灾/限速/refresh/API key/bind_dn/边界/锁定/诊断） | 其中 AD 模块调用在本机第二次楔死（t23 的 Set-ADDefaultDomainPasswordPolicy），留作过程记录 |
+| 11 | `15_cleanup.ps1` | 楔死善后：清僵尸 shell + ADSI 读/复位锁定策略 | 全 ADSI，零 AD 模块 |
+| 12 | `16_ad_extra_fix.py` | **定版**：T19 复测（5s settle）→ T23（ADSI 直写锁定）→ T17 容灾 → T18 限速 → owner 删 key → 恢复 OpenLDAP 基线 | ADSI 直写 + 每个 WinRM 调用客户端看门狗（守护线程超时弃单） |
 
 诊断支线（VM21 侧）：`vm21_diag.sh`（解析/TCP/裸 ldap3/报错出处定位）、`vm21_diag2.sh`（gns3server 日志 + CERT_REQUIRED/CERT_NONE 对照复现）。
 
@@ -31,3 +34,4 @@ GNS3-AD 节点（Windows Server 2022 Standard Core，192.168.101.32）建域 + �
 2. **DC 重启后不要立即调 AD 模块**（ADWS 未就绪会楔死服务端 shell）；先跑看门狗式验证。
 3. `09_ad_matrix.py` 的 `finally` 块自动把控制器配置恢复为 OpenLDAP 终态并验证——**重跑安全**。
 4. 凭据：域 administrator/Huawei@123（DSRM 同）；测试用户 gns3test；svc-gns3=svcldap123。
+5. **本机 DC 上 AD PowerShell 模块不可靠**（两次楔死：`Get-ADDomain`、`Set-ADDefaultDomainPasswordPolicy`；服务端 shell 常驻且 pywinrm `read_timeout` 不生效）。规则：**能 ADSI 就不 AD 模块** + 每个 WinRM 调用包客户端看门狗。API key 删除为 owner-only，跨用户删除 RBAC 拒（403）。

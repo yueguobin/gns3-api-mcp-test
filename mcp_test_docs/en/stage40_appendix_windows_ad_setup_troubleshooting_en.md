@@ -98,6 +98,8 @@ Get-Process powershell | Where-Object {
 
 In our case, after the cleanup, `Get-ADDomain` returned `ad.example.org` immediately.
 
+> **It came back the same day** (during the extra test round): `Set-ADDefaultDomainPasswordPolicy` wedged again — the server-side shell never returned for >44 minutes, and the pywinrm client `read_timeout` did not fire (the call blocked forever). Final handling: **drop the AD PowerShell module entirely** — group operations and policy changes are direct ADSI writes (`Put` + `SetInfo` on the domain/group objects; the local LDAP path never hung all day), and every WinRM call runs under a **client-side watchdog** (a daemon thread that abandons the call on join timeout; see `labs/pr3103-ad-test-scripts/16_ad_extra_fix.py`). Rule of thumb on a low-spec single-core DC: if ADSI can do it, do not use the AD module.
+
 ---
 
 ## Problem 3: the default password policy rejects the lab passwords

@@ -4,10 +4,10 @@
 |---|---|
 | 测试日期 | 2026-11-27 |
 | 被测对象 | VM21 gns3-server **3.1.0.dev8**（LDAP 认证功能，PR #3103 部署构建）× **GNS3-AD**（Windows Server 2022 Standard **Core**，10.0.20348，IP=192.168.101.32，域 `ad.example.org`，单 DC `GNS3-AD.ad.example.org`） |
-| 测试范围 | **Windows AD 联测功能矩阵 16 项**：认证与诊断（7）/ 组映射（4）/ 账号状态（2）/ TLS（2）/ 配置恢复（1） |
+| 测试范围 | **Windows AD 联测功能矩阵 16 项**：认证与诊断（7）/ 组映射（4）/ 账号状态（2）/ TLS（2）/ 配置恢复（1）；**另含补充测试 8 项**（测试 17–24：目录中断容灾/限速器/refresh×移组/API key×AD 禁用/bind_dn 失效/输入边界/AD 原生锁定策略/ldap/test 诊断变体，见 §5） |
 | 测试方式 | **黑盒功能测试**：controller REST API（脚本）+ 宿主机 `ldap*`/`openssl` 命令 + WinRM/PowerShell 管理通道。只记录功能行为与配置步骤，不做代码层分析 |
 | 环境搭建 | AD 节点与控制器侧配置全文见本文 **§0.2 / §0.3**（自包含，含全部命令）；脚本固化于 `labs/pr3103-ad-test-scripts/`（README 含执行顺序）；配置一致性核验见 §0.4 |
-| 结果标记 | ✓ 通过（**16/16 全部通过**；其中测试 2 的 svc-gns3 首轮 401 系测试脚本口令笔误，修正后 200，详见 §2 注） |
+| 结果标记 | ✓ 通过（**主矩阵 16/16 + 补充测试 8/8 全部通过**；测试 2 的 svc-gns3 首轮 401 系测试脚本口令笔误，修正后 200，详见 §2 注） |
 | 环境问题 | 搭建过程中的 5 个问题（StartTLS 52 / AD 模块悬挂 / 密码策略 / 管理面杂项 / 测试口令笔误）**单独成档**：`阶段40附录_Windows-AD环境搭建问题排查记录.md` |
 
 与阶段 39 的关系：阶段 39 验证了 PR #3103 × OpenLDAP 2.6.15（23+10 项）；本阶段在 **Windows AD**（PR 的原始目标目录类型）上复刻同一测试树与核心场景，控制器侧仅切换目录相关字段（差异对照见 §0.3），其余配置不变。
@@ -270,8 +270,41 @@ timeout = 10
 
 ## 4. 结论
 
-- PR #3103 在 **Windows AD（Server 2022 Core，单 DC）** 上 16/16 全部通过：登录、组映射（含原生 memberOf 双源）、超管翻转、AD 账号状态直通、LDAPS/StartTLS 双通道 + 证书校验负例、配置恢复，与 OpenLDAP 侧行为一致。
+- PR #3103 在 **Windows AD（Server 2022 Core，单 DC）** 上主矩阵 16/16 + 补充测试 8/8 全部通过：登录、组映射（含原生 memberOf 双源）、超管翻转、AD 账号状态直通、LDAPS/StartTLS 双通道 + 证书校验负例、配置恢复、容灾/限速/refresh/API key 生命周期，与 OpenLDAP 侧行为一致（含容灾时延量级：admin 逃生 271ms vs OpenLDAP 270ms，断期登录精确等满 timeout=10）。
 - 从 OpenLDAP 迁移到 AD 只需改动 **6 个字段**（§0.3 对照表），全部为目录侧形态差异，控制器侧机制无差异。
 - 环境搭建有 3 个高价值坑（自签证书必须 Root 自信任 + 重启、DC 重启后 AD 模块悬挂、默认密码策略），完整排查记录见**附录**：`阶段40附录_Windows-AD环境搭建问题排查记录.md`；全部脚本按执行顺序固化于 `labs/pr3103-ad-test-scripts/`。
 
 相关文档：阶段 39（OpenLDAP 侧全矩阵）`阶段39_PR3103-LDAP认证功能测试报告.md`；英文版 `mcp_test_docs/en/stage40_ldap_auth_windows_ad_test_en.md`。
+
+## 5. 补充测试（测试 17–24）
+
+补齐与 OpenLDAP 侧（阶段 39）同深度的机制项。脚本：`labs/pr3103-ad-test-scripts/14_ad_extra_matrix.py`（首版）与 `16_ad_extra_fix.py`（定版：ADSI 直写 + 客户端看门狗，见 §5.3 与附录问题 2 复发记录）。
+
+### 5.1 补充矩阵总表
+
+| 分组 | 测试项 | 场景 | 结果 | 实测要点 |
+|---|---|---|---|---|
+| D 容灾 | 测试17 | 目录中断容灾（netsh 拦 389/636） | ✓ | admin 本地逃生 **200/271ms**；断期旧 token **403/8.8ms**（fail-open）；断期新登录 401（**精确等满 timeout=10，实测 10.02s**）；恢复后 200/68ms——与 OpenLDAP 侧（阶段39 测试17–20）数字一致 |
+| E 限速 | 测试18 | 登录限速器 | ✓ | dave 5×401 → 第 6 次（正确密码）**429** → 窗口内 t+25s 仍 429 → **t+65s 精确解封 200**——机制与目录类型无关 |
+| F 会话 | 测试19 | refresh × 移组 | ✓ | 移出 gns3-admins（延迟 5s）→ 旧 token 200（fail-open）→ refresh 200 → 新 token **403**（角色重算）→ 恢复成员新登录 200——与 OpenLDAP 一致；移除后 ≈1s 内立即 refresh 曾观察到 200（收敛竞态窗口，见 §5.3） |
+| F 会话 | 测试20 | API key × AD 禁用/移组 | ✓ | AD **禁用 bob 后 key 仍 200**（key 认证不查目录）；禁用期新登录 401、重启用后新登录 200 → 同一 key 200；移组成员+新登录（角色→Users）→ 同一 key **403**（权限随重新登录收敛）→ 恢复 → 200；**key 删除为 owner-only**（见 §5.3） |
+| G 全局故障 | 测试21 | bind_dn 失效 | ✓ | svc-gns3 密码改坏 → alice 登录 401；恢复 → 200（与阶段39 测试24 同形态） |
+| H 诊断 | 测试24 | ldap/test 诊断变体 | ✓ | bind_password 错误 → `{"status":"error","bind_successful":false,"users_found":0}`（21.6ms）；正确 → success，users_found=5（15.5ms，样本上限） |
+| G 输入边界 | 测试22 | 输入边界 | ✓ | 特殊字符密码 `Gns3!test#2026&<>"` → **200**（JSON API 全通）；空密码 401；**`" alice "` 前后空白 → 200 归一**（AD sAMAccountName 匹配同样折叠空白，与 OpenLDAP caseIgnore 行为一致）；中文不存在用户 401；2000 字符用户名 401 |
+| C 账号策略 | 测试23 | AD 原生锁定策略 | ✓ | 域锁定 threshold=3/60s：erin 3 错 → **正确密码也 401（46ms——目录级锁定先于限速器）** → 60s **自动解锁 200** → 阈值复位 0 复核 200——复刻 OpenLDAP ppolicy（阶段39 测试31）的双层保护形态 |
+
+结论：补充 8 项全部通过，AD 侧合计 **24/24**。
+
+### 5.2 关键行为记录（测试 19 / 20 / 23）
+
+**测试19 收敛竞态窗口**：首测在移出成员后立即（≈1s）refresh，新 token 仍 200（当时预期 403）；延迟 5s 复测同一场景 → 新 token 403，与 OpenLDAP 一致。定性：**紧贴成员移除的立即刷新存在短暂收敛竞态窗口**（单次观察，未重复展开）；刷新收敛语义本身两目录一致。
+
+**测试20 key 删除是 owner-only**：admin 用自己的 token 删除 bob 的 key → **403**（RBAC 拒绝跨用户删除）；bob 删除自己的 key → 204。与阶段39 测试33 的"管理员删除用户本地记录"（账号级删除 → key 401）是两条不同路径——key 的生命周期操作（revoke/restore/delete）都归属创建者，管理员只能通过删除/禁用**用户**来间接处死 key。
+
+**测试23 锁定策略改写必须走 ADSI**：`Set-ADDefaultDomainPasswordPolicy`（AD 模块/ADWS 路径）在本机**第二次楔死**（服务端 shell 无返回 >44 分钟，客户端 read_timeout 未生效）。最终弃用 AD 模块：组操作与策略改写一律域根对象/组对象 ADSI 直写（`Put`/`SetInfo`），并为每个 WinRM 调用加客户端看门狗（守护线程 join 超时即弃单）。挂死模式与完整处置见附录问题 2。
+
+### 5.3 环境残留说明
+
+- 测试20 的两把测试 key 均已按 owner 语义删除（204，bob key 列表为空）；bob 组成员已恢复（Administrators=[bob,carol,erin] 复核）。
+- dave/erin 账号 enabled、密码复原；锁定阈值已复位 0（duration/observation 回默认）；防火墙拦截规则已删除；svc-gns3 密码已复原（bind 实测 Success）。
+- 测试结束后控制器已恢复 OpenLDAP 终态配置并验证（carol 200、Administrators=[bob,carol,erin]）。
