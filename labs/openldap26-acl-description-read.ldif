@@ -1,0 +1,12 @@
+# 测试34 登录门控用：在 {2} 属性白名单（member-read 补丁态）末尾追加 description
+# 背景: OpenLDAP 下 user_search_filter 里引用的属性必须能被 bind_dn 读到（olcAccess 白名单），
+#       否则过滤器按"属性不存在"匹配失败——gns3-allowed 门控不生效。
+# 应用: ldapmodify -x -H ldap://192.168.101.31:3890 -D "cn=admin,cn=config" -w config -f openldap26-acl-description-read.ldif
+# 回退: 用同型 delete/add 把 {2} 改回 ...dc,member（member-read 补丁后的原值）
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+delete: olcAccess
+olcAccess: {2}to attrs=entry,objectClass,cn,sn,givenName,mail,uid,ou,o,dc,member by self read by users read by * break
+-
+add: olcAccess
+olcAccess: {2}to attrs=entry,objectClass,cn,sn,givenName,mail,uid,ou,o,dc,member,description by self read by users read by * break

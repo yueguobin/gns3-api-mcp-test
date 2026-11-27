@@ -17,6 +17,7 @@ uri `ldap://ldap.example.org:3890`, mappings `gns3-admins→Administrators`,
 | 3 | `03_config_flips.py` | test 9 TLS variants + test 7 frank flip | mutates `/v3/settings`; `finally` block always restores terminal config |
 | 4 | `04_dr_recover_wait.py` | recovery poller after `node_start` | 429 responses during polling = rate limiter (outage failures count), not necessarily still-down |
 | 5 | `05_rate_limiter.py` | test 10 rate limiter | run LAST — blocks username `dave` for ~60 s |
+| 6 | `06_login_gate.py` | test 34 login gating (filter × ACL whitelist interplay) | mutates settings + directory marks + olcAccess {2}; `finally` restores all three; needs `ldapmodify` from the test host (ACL step binds `cn=admin,cn=config`) |
 
 DR phase (between 03 and 05): save an alice token, stop the OpenLDAP-1 node
 (GNS3 MCP `node_stop` / GUI), run the three probe curls, start the node

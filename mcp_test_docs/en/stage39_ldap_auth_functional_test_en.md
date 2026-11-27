@@ -5,9 +5,9 @@
 
 | Item | Content |
 |---|---|
-| Test date | 2026-11-26 (main matrix + extra tests 24–32); 2026-11-27 (Test 33, API key life cycle) |
+| Test date | 2026-11-26 (main matrix + extra tests 24–32); 2026-11-27 (Test 33, API key life cycle; Test 34, login gating) |
 | System under test | gns3-server **3.1.0.dev8** on VM21 (LDAP authentication, build from PR #3103) together with **OpenLDAP-1** (osixia/openldap:2.6.15, `ldap://ldap.example.org:3890` / `ldaps://:6360`, IP 192.168.101.31) |
-| Test scope | **Functional test matrix, 23 items**: login (6) / groups and roles (6) / TLS (4) / outage and recovery (5) / admin and diagnostics (2); **plus 10 extra tests** (Tests 24–33: broken bind_dn, input limits, half-dead directory timeout, refresh token × revocation, deleted user, password-policy lockout, service restart, API key × LDAP revocation — see §5) |
+| Test scope | **Functional test matrix, 23 items**: login (6) / groups and roles (6) / TLS (4) / outage and recovery (5) / admin and diagnostics (2); **plus 11 extra tests** (Tests 24–34: broken bind_dn, input limits, half-dead directory timeout, refresh token × revocation, deleted user, password-policy lockout, service restart, API key × LDAP revocation, login gating — see §5) |
 | Test method | **Black-box functional tests**: REST API calls (curl and scripts), LDAP commands from the test host, MCP `node_stop` / `node_start`. This report only describes what the features do. It does not discuss code. |
 | Setup | The full configuration is in **§0.2 and §0.3** (all commands included). Test scripts: `labs/pr3103-retest-scripts/`. Config check: §0.4. |
 | Result mark | ✓ pass — **all 23 items passed** |
@@ -429,9 +429,9 @@ curl -X POST http://192.168.101.21/v3/settings/ldap/test -H "Authorization: Bear
 
 After the tests, the config stays in its normal state: StartTLS + verify_cert=True + the two group mappings. No change was left behind in the environment.
 
-## 5. Extra tests (10 more scenarios)
+## 5. Extra tests (11 more scenarios)
 
-We also tested 10 more common scenarios (Tests 24–32 on 2026-11-26, Test 33 on 2026-11-27). The test numbers continue from 24 to 33.
+We also tested 11 more common scenarios (Tests 24–32 on 2026-11-26; Tests 33 and 34 on 2026-11-27). The test numbers continue from 24 to 34.
 
 ### 5.1 Results table
 
@@ -447,8 +447,9 @@ We also tested 10 more common scenarios (Tests 24–32 on 2026-11-26, Test 33 on
 | J directory policy | Test 31 | Password-policy lockout (3 wrong tries lock for 60 s) | ✓ | See §5.3: after 3 wrong passwords, **even the correct password is rejected (401)** — directory-side lockout, different from the 429 of the rate limit; after 60 s it unlocks itself (200) |
 | K service life cycle | Test 32 | Old JWT after a server restart | ✓ | After `systemctl restart gns3`, the old token still answers **403 (not 401)** — the login stays valid, the signing key survives the restart; a new login gives 200 |
 | L API key | Test 33 | API key life cycle after LDAP revocation / user deletion | ✓ | See §5.3: after LDAP revocation (member removed) or even **user deletion** in the directory, the key still works (key login never touches the directory); the rights follow the user's next login (200 → 403 → back to 200); the key dies only when the local user record is deleted (401) |
+| M login gating | Test 34 | LDAP login gating (who may log in to GNS3) | ✓ | See §5.3: GNS3 has no user-whitelist setting. Login passes only when **base_dn scope × filter condition × bind_dn-readable attribute whitelist × account state** all pass. With a `description` condition in the filter: marked users 200, unmarked 401. Failure looks the same as a wrong password (no user enumeration) |
 
-Result: **all 10 extra tests passed.**
+Result: **all 11 extra tests passed.**
 
 ### 5.2 How we ran it (short)
 
@@ -465,6 +466,15 @@ Result: **all 10 extra tests passed.**
 
 # Test 32: save an alice token → ssh VM21 'sudo systemctl restart gns3' → wait for the service
 #         → probe old token + new login
+
+# Test 34: login gating. 1) ldapmodify adds a mark to alice/dave (add: description / description: gns3-allowed)
+#         2) PUT settings temporarily changes user_search_filter to
+#            (&(objectClass=person)(uid={username})(description=gns3-allowed))
+#         3) login probe: alice/dave 200, bob/frank and others 401
+#         4) restore the original filter + remove the marks → everyone 200
+#         ACL part: `description` must also be added to the olcAccess {2} attribute whitelist
+#         (same shape as labs/openldap26-acl-member-read.ldif; patch file: labs/openldap26-acl-description-read.ldif;
+#          script: labs/pr3103-retest-scripts/06_login_gate.py)
 ```
 
 ### 5.3 Two behaviors worth noting
@@ -514,9 +524,38 @@ Meaning: the directory password policy and the GNS3 rate limit are **two indepen
 
 Meaning: an LDAP-side revocation (member removed, or the user deleted) **has no direct effect on an API key** — the key's rights are whatever the user's last login wrote into the DB, and the role catches up at the next login (same rule as JWT refresh). A key really dies only in three ways: the local user is deleted or disabled, the key is revoked, or the key is deleted. Operation note: **when you disable an account in LDAP, also clean up the local user or its API keys** — otherwise the key stays valid as long as that user never logs in again.
 
+**Test 34 login gating** (2026-11-27; OpenLDAP ACL × filter interplay):
+
+```text
+1) GNS3 has no "which users may log in" whitelist setting — the directory decides,
+   through four gates that must ALL pass:
+   1. the user entry is inside the base_dn search scope
+   2. the user_search_filter condition matches
+   3. every attribute used in the filter is readable by bind_dn
+      (the olcAccess whitelist — OpenLDAP-specific; AD has no such pitfall)
+   4. the account is enabled and the password is correct
+2) filter gate proven in both directions: we temporarily PUT a filter with
+   (description=gns3-allowed) and marked alice/dave → they log in (200);
+   bob/frank/erin and everyone else without the mark → 401;
+   original filter restored + marks removed → everyone 200 again
+3) surprise in the first round: alice/dave already carried description but still got 401 —
+   the {2} ACL attribute whitelist did not include description, so svc-gns3 could not read
+   the attribute and the filter matched it as "not present"; after adding description to
+   the {2} attrs the gate worked in both directions
+   (AD has no such problem: attributes are readable for authenticated users by default)
+4) failure looks the same as a wrong password: no-permission user, unknown user, wrong
+   password — all answer 401 with no difference (no account enumeration)
+5) login and group mapping are independent: a user in no mapped group still logs in fine
+   and lands in the default group (Users) — "may log in" is decided by the gates,
+   "role after login" is decided by the mappings
+```
+
+Meaning: login gating is a **directory-side configuration job** — base_dn sets the scope, the filter sets the entry condition (together with the ACL so bind_dn can read the attributes), and a disabled or locked account is shut out. GNS3 needs (and has) no user whitelist setting.
+
 ### 5.4 What stayed in the environment
 
 - Tests 24/26: passwords restored to the original hashes and re-checked. Test 30: the temp entry is deleted. Test 29: group members restored (Administrators=[bob,carol,erin] verified).
 - Test 33: both test keys are deleted; the temp-ghost2 directory entry and local user record are deleted; carol's membership is restored and a fresh login verified (200).
+- Test 34: the description marks on alice/dave are removed; user_search_filter and olcAccess {2} are back to their original values ({2} = the member-read patch state, without description); alice/dave logins re-verified (200).
 - Test 31 cleanup: no overlay, no policy entry, no subentry left. The `olcModuleLoad: {2}ppolicy.so` line stays (OpenLDAP does not allow removing a module load at runtime, error 80; without an overlay it does nothing; the `cn={4}ppolicy` schema comes with the image).
 - Test 32: the service was restarted and runs normally (/v3/version answers).
